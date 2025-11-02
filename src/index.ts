@@ -7,7 +7,9 @@
 // Export types
 export * from './types/config.js';
 
-// Export core functionality (will be implemented)
-// export * from './core/config/index.js';
+// Export core functionality
+export * from './core/config/index.js';
+
+// Will be implemented
 // export * from './core/deployer/index.js';
 // export * from './core/state/index.js';
