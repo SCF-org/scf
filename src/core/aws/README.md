@@ -6,13 +6,16 @@ SCF의 AWS 통합 모듈입니다. AWS 인증 정보 관리, 검증, 그리고 S
 
 ```
 src/core/aws/
-├── credentials.ts    # AWS 인증 정보 Resolution
-├── verify.ts         # STS를 통한 인증 검증
-├── client.ts         # AWS Client 생성 헬퍼
-├── s3-bucket.ts      # S3 버킷 관리
-├── s3-deployer.ts    # S3 배포 오케스트레이터
-├── index.ts          # 통합 entry point
-└── README.md         # 본 문서
+├── credentials.ts             # AWS 인증 정보 Resolution
+├── verify.ts                  # STS를 통한 인증 검증
+├── client.ts                  # AWS Client 생성 헬퍼
+├── s3-bucket.ts               # S3 버킷 관리
+├── s3-deployer.ts             # S3 배포 오케스트레이터
+├── cloudfront-distribution.ts # CloudFront Distribution 관리
+├── cloudfront-invalidation.ts # CloudFront 캐시 무효화
+├── cloudfront-deployer.ts     # CloudFront 배포 오케스트레이터
+├── index.ts                   # 통합 entry point
+└── README.md                  # 본 문서
 ```
 
 ---
@@ -1244,6 +1247,633 @@ export default defineConfig({
 
 ---
 
+### 6. `cloudfront-distribution.ts` - CloudFront Distribution 관리
+
+**목적**: CloudFront Distribution의 생성, 조회, 업데이트, 배포 대기를 담당합니다.
+
+#### 주요 함수
+
+**`distributionExists(client: CloudFrontClient, distributionId: string): Promise<boolean>`**
+
+Distribution의 존재 여부를 확인합니다.
+
+```typescript
+import { distributionExists } from './cloudfront-distribution.js';
+
+const exists = await distributionExists(cfClient, 'E1234567890ABC');
+
+if (exists) {
+  console.log('Distribution exists');
+}
+```
+
+**`getDistribution(client: CloudFrontClient, distributionId: string): Promise<Distribution | null>`**
+
+Distribution 정보를 조회합니다.
+
+```typescript
+const distribution = await getDistribution(cfClient, 'E1234567890ABC');
+
+if (distribution) {
+  console.log(`Domain: ${distribution.DomainName}`);
+  console.log(`Status: ${distribution.Status}`);
+}
+```
+
+**`createDistribution(client: CloudFrontClient, options: CreateDistributionOptions): Promise<Distribution>`**
+
+새로운 CloudFront Distribution을 생성합니다.
+
+```typescript
+const distribution = await createDistribution(cfClient, {
+  s3BucketName: 'my-bucket',
+  s3Region: 'ap-northeast-2',
+  indexDocument: 'index.html',
+  priceClass: 'PriceClass_100',
+  ipv6: true,
+});
+
+console.log(`Distribution ID: ${distribution.Id}`);
+console.log(`Domain: ${distribution.DomainName}`);
+```
+
+**옵션:**
+```typescript
+interface CreateDistributionOptions {
+  s3BucketName: string;              // S3 버킷 이름 (필수)
+  s3Region: string;                  // S3 리전 (필수)
+  indexDocument?: string;            // Index 문서 (기본: 'index.html')
+  customDomain?: {                   // 커스텀 도메인 설정
+    domainName: string;              // 도메인 이름 (예: example.com)
+    certificateArn: string;          // ACM 인증서 ARN (us-east-1)
+    aliases?: string[];              // 추가 aliases
+  };
+  priceClass?: 'PriceClass_100' | 'PriceClass_200' | 'PriceClass_All';
+  defaultTTL?: number;               // 기본 캐시 TTL (초, 기본: 86400)
+  maxTTL?: number;                   // 최대 TTL (초, 기본: 31536000)
+  minTTL?: number;                   // 최소 TTL (초, 기본: 0)
+  ipv6?: boolean;                    // IPv6 활성화 (기본: true)
+}
+```
+
+**생성되는 설정:**
+- Origin: S3 Website Endpoint (index document 처리용)
+- Protocol Policy: Redirect to HTTPS
+- Compression: 활성화
+- Cache Methods: GET, HEAD
+- Price Class: 선택 가능 (기본: PriceClass_100)
+
+**`updateDistribution(client: CloudFrontClient, distributionId: string, updates: Partial<CreateDistributionOptions>): Promise<Distribution>`**
+
+기존 Distribution을 업데이트합니다.
+
+```typescript
+const updated = await updateDistribution(cfClient, 'E1234567890ABC', {
+  priceClass: 'PriceClass_All',
+  defaultTTL: 3600,
+  customDomain: {
+    domainName: 'www.example.com',
+    certificateArn: 'arn:aws:acm:us-east-1:...',
+  },
+});
+
+console.log('Distribution updated');
+```
+
+**주의사항:**
+- ETag를 사용하여 동시 수정 방지
+- 업데이트 후 배포 진행 중 상태가 됨 (InProgress)
+
+**`waitForDistributionDeployed(client: CloudFrontClient, distributionId: string, options?): Promise<void>`**
+
+Distribution 배포 완료를 대기합니다.
+
+```typescript
+console.log('Waiting for distribution deployment...');
+
+await waitForDistributionDeployed(cfClient, 'E1234567890ABC', {
+  maxWaitTime: 1200,  // 최대 20분
+  minDelay: 20,       // 최소 20초 간격
+  maxDelay: 60,       // 최대 60초 간격
+});
+
+console.log('Distribution deployed!');
+```
+
+**대기 옵션:**
+```typescript
+interface WaitOptions {
+  maxWaitTime?: number;  // 최대 대기 시간 (초, 기본: 1200)
+  minDelay?: number;     // 최소 polling 간격 (초, 기본: 20)
+  maxDelay?: number;     // 최대 polling 간격 (초, 기본: 60)
+}
+```
+
+**`getDistributionUrl(distribution: Distribution): string`**
+
+Distribution의 HTTPS URL을 반환합니다.
+
+```typescript
+const url = getDistributionUrl(distribution);
+console.log(url);
+// → "https://d123456abcdef.cloudfront.net"
+```
+
+#### 사용 시나리오
+
+**신규 Distribution 생성:**
+```typescript
+import { createDistribution, waitForDistributionDeployed } from './cloudfront-distribution.js';
+
+async function setupCDN() {
+  // 1. Distribution 생성
+  const distribution = await createDistribution(cfClient, {
+    s3BucketName: 'my-website',
+    s3Region: 'ap-northeast-2',
+    priceClass: 'PriceClass_100',
+    defaultTTL: 86400,
+  });
+
+  console.log(`Created: ${distribution.Id}`);
+
+  // 2. 배포 완료 대기 (선택)
+  await waitForDistributionDeployed(cfClient, distribution.Id!);
+
+  console.log(`Available at: ${getDistributionUrl(distribution)}`);
+}
+```
+
+**커스텀 도메인 설정:**
+```typescript
+const distribution = await createDistribution(cfClient, {
+  s3BucketName: 'my-website',
+  s3Region: 'ap-northeast-2',
+  customDomain: {
+    domainName: 'www.example.com',
+    certificateArn: 'arn:aws:acm:us-east-1:123456789012:certificate/...',
+    aliases: ['www.example.com', 'example.com'],
+  },
+});
+
+console.log('Custom domain configured');
+console.log('Update DNS CNAME to:', distribution.DomainName);
+```
+
+**중요:** ACM 인증서는 반드시 `us-east-1` 리전에 생성되어야 합니다.
+
+---
+
+### 7. `cloudfront-invalidation.ts` - CloudFront 캐시 무효화
+
+**목적**: CloudFront 캐시를 무효화하여 최신 콘텐츠를 즉시 반영합니다.
+
+#### 주요 함수
+
+**`createInvalidation(client: CloudFrontClient, distributionId: string, options: InvalidationOptions): Promise<Invalidation>`**
+
+캐시 무효화를 생성합니다.
+
+```typescript
+import { createInvalidation } from './cloudfront-invalidation.js';
+
+const invalidation = await createInvalidation(cfClient, 'E1234567890ABC', {
+  paths: ['/index.html', '/css/*', '/js/*'],
+});
+
+console.log(`Invalidation ID: ${invalidation.Id}`);
+console.log(`Status: ${invalidation.Status}`);
+```
+
+**옵션:**
+```typescript
+interface InvalidationOptions {
+  paths: string[];           // 무효화할 경로 목록 (필수)
+  callerReference?: string;  // 고유 식별자 (기본: scf-{timestamp})
+}
+```
+
+**경로 패턴:**
+```typescript
+// 특정 파일
+paths: ['/index.html', '/about.html']
+
+// 디렉토리 전체
+paths: ['/css/*', '/js/*']
+
+// 모든 파일
+paths: ['/*']
+
+// 특정 확장자
+paths: ['/*.html', '/*.css', '/*.js']
+```
+
+**`invalidateCache(client: CloudFrontClient, distributionId: string, paths: string[], options?): Promise<Invalidation>`**
+
+캐시 무효화 생성 및 대기를 한 번에 처리합니다.
+
+```typescript
+const invalidation = await invalidateCache(
+  cfClient,
+  'E1234567890ABC',
+  ['/index.html', '/main.js'],
+  {
+    wait: true,          // 완료 대기 (기본: true)
+    maxWaitTime: 600,    // 최대 10분
+  }
+);
+
+console.log('Cache invalidated!');
+```
+
+**`invalidateAll(client: CloudFrontClient, distributionId: string, options?): Promise<Invalidation>`**
+
+모든 캐시를 무효화합니다 (`/*` 패턴 사용).
+
+```typescript
+await invalidateAll(cfClient, 'E1234567890ABC', {
+  wait: true,
+});
+
+console.log('All caches cleared!');
+```
+
+**주의:** 월 1,000건까지 무료, 이후 건당 $0.005
+
+**`waitForInvalidationCompleted(client: CloudFrontClient, distributionId: string, invalidationId: string, options?): Promise<void>`**
+
+무효화 완료를 대기합니다.
+
+```typescript
+await waitForInvalidationCompleted(
+  cfClient,
+  'E1234567890ABC',
+  'I2J3K4L5M6N7O8P9Q0',
+  {
+    maxWaitTime: 600,  // 최대 10분
+    minDelay: 20,
+    maxDelay: 60,
+  }
+);
+```
+
+**일반적인 소요 시간:** 1-5분
+
+**`getInvalidation(client: CloudFrontClient, distributionId: string, invalidationId: string): Promise<Invalidation | null>`**
+
+무효화 상태를 조회합니다.
+
+```typescript
+const invalidation = await getInvalidation(
+  cfClient,
+  'E1234567890ABC',
+  'I2J3K4L5M6N7O8P9Q0'
+);
+
+console.log(`Status: ${invalidation?.Status}`);
+// "InProgress" | "Completed"
+```
+
+#### 사용 시나리오
+
+**배포 후 자동 무효화:**
+```typescript
+async function deployAndInvalidate() {
+  // 1. S3 업로드
+  await deployToS3(config);
+
+  // 2. 전체 캐시 무효화
+  console.log('Invalidating CloudFront cache...');
+
+  await invalidateAll(cfClient, distributionId, {
+    wait: true,
+  });
+
+  console.log('Cache invalidated. New content is live!');
+}
+```
+
+**특정 파일만 무효화:**
+```typescript
+// 변경된 파일만 무효화
+const changedFiles = ['/index.html', '/main.js', '/style.css'];
+
+await invalidateCache(cfClient, distributionId, changedFiles, {
+  wait: false,  // 백그라운드 진행
+});
+
+console.log('Invalidation started');
+```
+
+**여러 패턴 무효화:**
+```typescript
+await invalidateCache(cfClient, distributionId, [
+  '/index.html',      // 메인 페이지
+  '/api/*',           // API 응답
+  '/static/css/*',    // CSS 파일
+  '/static/js/*',     // JS 파일
+]);
+```
+
+#### 비용 최적화
+
+**무료 무효화 할당:**
+- 월 1,000건 무효화 무료
+- 각 무효화는 최대 3,000개 경로 포함 가능
+
+**권장 사항:**
+```typescript
+// ❌ 비효율적 (1,000건 소진)
+for (const file of files) {
+  await createInvalidation(cfClient, distId, { paths: [file] });
+}
+
+// ✅ 효율적 (1건만 사용)
+await createInvalidation(cfClient, distId, {
+  paths: files.slice(0, 3000),  // 최대 3,000개
+});
+
+// ✅ 가장 효율적 (전체 무효화)
+await invalidateAll(cfClient, distId);
+```
+
+---
+
+### 8. `cloudfront-deployer.ts` - CloudFront 배포 오케스트레이터
+
+**목적**: S3 배포와 CloudFront를 통합하여 전체 배포 프로세스를 조율합니다.
+
+#### 주요 함수
+
+**`deployToCloudFront(config: SCFConfig, s3DeploymentStats: DeploymentStats, options?): Promise<CloudFrontDeploymentResult>`**
+
+CloudFront에 배포하고 캐시를 무효화합니다.
+
+```typescript
+import { deployToCloudFront } from './cloudfront-deployer.js';
+
+// S3 배포 먼저 수행
+const s3Stats = await deployToS3(config);
+
+// CloudFront 배포
+const cfResult = await deployToCloudFront(config, s3Stats, {
+  distributionId: 'E1234567890ABC',  // 기존 Distribution
+  invalidateAll: true,
+  waitForDeployment: true,
+  waitForInvalidation: true,
+});
+
+console.log(`Distribution URL: ${cfResult.distributionUrl}`);
+```
+
+**옵션:**
+```typescript
+interface CloudFrontDeploymentOptions {
+  distributionId?: string;         // 기존 Distribution ID
+  invalidatePaths?: string[];      // 무효화할 경로 목록
+  invalidateAll?: boolean;         // 전체 무효화 (기본: false)
+  waitForDeployment?: boolean;     // 배포 완료 대기 (기본: true)
+  waitForInvalidation?: boolean;   // 무효화 완료 대기 (기본: true)
+  showProgress?: boolean;          // Progress 표시 (기본: true)
+}
+```
+
+**반환 타입:**
+```typescript
+interface CloudFrontDeploymentResult {
+  distributionId: string;        // Distribution ID
+  distributionDomain: string;    // CloudFront 도메인
+  distributionUrl: string;       // 전체 HTTPS URL
+  invalidationId?: string;       // Invalidation ID
+  isNewDistribution: boolean;    // 신규 생성 여부
+  deploymentTime: number;        // 배포 소요 시간 (ms)
+}
+```
+
+**`deployWithCloudFront(config: SCFConfig, deployToS3Function, options?): Promise<{s3Stats, cloudFront}>`**
+
+S3 + CloudFront 통합 배포 함수입니다.
+
+```typescript
+import { deployWithCloudFront, deployToS3 } from 'scf';
+
+const result = await deployWithCloudFront(config, deployToS3, {
+  s3Options: {
+    gzip: true,
+    concurrency: 10,
+  },
+  cloudFrontOptions: {
+    invalidateAll: true,
+    waitForInvalidation: true,
+  },
+});
+
+console.log(`S3: ${result.s3Stats.uploaded} files uploaded`);
+console.log(`CloudFront: ${result.cloudFront.distributionUrl}`);
+```
+
+#### 배포 프로세스
+
+**1단계: S3 배포**
+```
+🚀 Starting deployment...
+
+📦 Step 1: S3 Deployment
+
+✓ S3 bucket ready: my-bucket
+✓ Found 42 files (2.3 MB)
+📤 Uploading files...
+✓ Uploaded: 40 files
+```
+
+**2단계: CloudFront 배포**
+```
+☁️  Step 2: CloudFront Deployment
+
+✓ CloudFront distribution found: E1234567890ABC
+✓ Distribution deployed
+✓ Cache invalidation created: I2J3K4L5M6N7O8P9Q0
+
+🌐 CloudFront Deployment Complete
+Distribution ID: E1234567890ABC
+Domain: d123456abcdef.cloudfront.net
+URL: https://d123456abcdef.cloudfront.net
+Deployment time: 45.23s
+```
+
+**3단계: 완료**
+```
+✨ Deployment completed successfully!
+```
+
+#### 자동 캐시 무효화
+
+배포 방식에 따라 자동으로 캐시를 무효화합니다:
+
+**1. 전체 무효화 (invalidateAll: true)**
+```typescript
+await deployToCloudFront(config, s3Stats, {
+  invalidateAll: true,
+});
+// → 모든 캐시 무효화 (/*  패턴)
+```
+
+**2. 특정 경로 무효화**
+```typescript
+await deployToCloudFront(config, s3Stats, {
+  invalidatePaths: ['/index.html', '/main.js'],
+});
+// → 지정된 경로만 무효화
+```
+
+**3. 자동 무효화 (업로드된 파일 기준)**
+```typescript
+await deployToCloudFront(config, s3Stats, {
+  // invalidatePaths 지정 안함
+});
+// → S3에 업로드된 파일이 있으면 전체 무효화
+```
+
+**4. 무효화 안함**
+```typescript
+await deployToCloudFront(config, s3Stats, {
+  invalidatePaths: [],
+  invalidateAll: false,
+});
+// → 캐시 무효화 하지 않음
+```
+
+#### Distribution 생성 vs 업데이트
+
+**기존 Distribution 사용:**
+```typescript
+// Config에 distributionId 지정
+const result = await deployToCloudFront(config, s3Stats, {
+  distributionId: 'E1234567890ABC',
+});
+
+console.log(result.isNewDistribution);  // false
+```
+
+**신규 Distribution 생성:**
+```typescript
+// distributionId 없으면 자동 생성
+const result = await deployToCloudFront(config, s3Stats, {
+  // distributionId 생략
+});
+
+console.log(result.isNewDistribution);  // true
+console.log(result.distributionId);     // 새로 생성된 ID
+```
+
+#### Config 설정
+
+```typescript
+// scf.config.ts
+export default defineConfig({
+  app: 'my-website',
+  region: 'ap-northeast-2',
+
+  s3: {
+    bucketName: 'my-website',
+    buildDir: './dist',
+  },
+
+  cloudfront: {
+    enabled: true,
+    priceClass: 'PriceClass_100',
+    defaultTTL: 86400,
+    customDomain: {
+      domainName: 'www.example.com',
+      certificateArn: 'arn:aws:acm:us-east-1:...',
+    },
+  },
+});
+```
+
+#### 전체 사용 예시
+
+```typescript
+import { loadConfig, deployWithCloudFront, deployToS3 } from 'scf';
+
+async function fullDeploy() {
+  // 1. Config 로드
+  const config = await loadConfig({ env: 'prod' });
+
+  // 2. S3 + CloudFront 통합 배포
+  const result = await deployWithCloudFront(config, deployToS3, {
+    s3Options: {
+      gzip: true,
+      concurrency: 10,
+      showProgress: true,
+    },
+    cloudFrontOptions: {
+      distributionId: 'E1234567890ABC',
+      invalidateAll: true,
+      waitForInvalidation: true,
+      showProgress: true,
+    },
+  });
+
+  // 3. 결과 확인
+  console.log('\n📊 Deployment Summary:');
+  console.log(`S3 Files: ${result.s3Stats.uploaded} uploaded`);
+  console.log(`S3 Duration: ${(result.s3Stats.duration / 1000).toFixed(2)}s`);
+  console.log(`CloudFront URL: ${result.cloudFront.distributionUrl}`);
+  console.log(`Total Time: ${((result.s3Stats.duration + result.cloudFront.deploymentTime) / 1000).toFixed(2)}s`);
+}
+
+fullDeploy().catch(console.error);
+```
+
+#### 에러 처리
+
+```typescript
+try {
+  const result = await deployToCloudFront(config, s3Stats, options);
+} catch (error) {
+  if (error.message.includes('CloudFront is not enabled')) {
+    console.error('Enable CloudFront in your config');
+  } else if (error.message.includes('Distribution') && error.message.includes('not found')) {
+    console.error('Invalid distribution ID');
+  } else if (error.message.includes('ACM')) {
+    console.error('Certificate must be in us-east-1 region');
+  } else {
+    console.error('CloudFront deployment failed:', error);
+  }
+}
+```
+
+#### 성능 팁
+
+**1. 병렬 대기 비활성화 (빠른 배포)**
+```typescript
+await deployToCloudFront(config, s3Stats, {
+  waitForDeployment: false,      // 백그라운드 배포
+  waitForInvalidation: false,    // 백그라운드 무효화
+});
+// 즉시 완료 (배포는 백그라운드에서 진행)
+```
+
+**2. 무효화만 대기**
+```typescript
+await deployToCloudFront(config, s3Stats, {
+  waitForDeployment: false,      // Distribution 배포 대기 안함
+  waitForInvalidation: true,     // 무효화는 대기
+});
+// 무효화 완료까지만 대기 (1-5분)
+```
+
+**3. 전부 대기 (안전한 배포)**
+```typescript
+await deployToCloudFront(config, s3Stats, {
+  waitForDeployment: true,       // 모든 배포 대기
+  waitForInvalidation: true,     // 모든 무효화 대기
+});
+// 완전히 배포 완료까지 대기 (10-20분)
+```
+
+---
+
 ## 📚 참고 자료
 
 - [AWS SDK for JavaScript v3](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/)
@@ -1270,7 +1900,18 @@ export default defineConfig({
 - [ ] S3 Transfer Acceleration 지원
 - [ ] 버킷 버전 관리 지원
 
+### CloudFront Deployment
+- [x] Distribution 생성/관리
+- [x] 캐시 무효화 자동화
+- [x] 커스텀 도메인 설정
+- [ ] Lambda@Edge 함수 연동
+- [ ] WAF (Web Application Firewall) 통합
+- [ ] CloudFront Functions 지원
+- [ ] 실시간 로그 스트리밍
+- [ ] 에러 페이지 커스터마이징 확장
+
 ### 공통
 - [ ] Retry 전략 커스터마이징
 - [ ] CloudWatch Logs 통합
 - [ ] 배포 롤백 기능
+- [ ] 배포 히스토리 추적

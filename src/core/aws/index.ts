@@ -41,6 +41,38 @@ export {
   deployToS3,
 } from './s3-deployer.js';
 
+// CloudFront Distribution management
+export {
+  distributionExists,
+  getDistribution,
+  createDistribution,
+  updateDistribution,
+  waitForDistributionDeployed,
+  getDistributionDomainName,
+  getDistributionUrl,
+  type CreateDistributionOptions,
+} from './cloudfront-distribution.js';
+
+// CloudFront Invalidation
+export {
+  createInvalidation,
+  getInvalidation,
+  waitForInvalidationCompleted,
+  invalidateCache,
+  invalidateAll,
+  isInvalidationComplete,
+  getInvalidationStatus,
+  type InvalidationOptions,
+} from './cloudfront-invalidation.js';
+
+// CloudFront Deployer
+export {
+  deployToCloudFront,
+  deployWithCloudFront,
+  type CloudFrontDeploymentOptions,
+  type CloudFrontDeploymentResult,
+} from './cloudfront-deployer.js';
+
 // Re-export types
 export type {
   AWSCredentials,
