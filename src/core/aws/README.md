@@ -9,6 +9,8 @@ src/core/aws/
 ├── credentials.ts    # AWS 인증 정보 Resolution
 ├── verify.ts         # STS를 통한 인증 검증
 ├── client.ts         # AWS Client 생성 헬퍼
+├── s3-bucket.ts      # S3 버킷 관리
+├── s3-deployer.ts    # S3 배포 오케스트레이터
 ├── index.ts          # 통합 entry point
 └── README.md         # 본 문서
 ```
@@ -800,6 +802,448 @@ aws sts get-caller-identity
 
 ---
 
+### 4. `s3-bucket.ts` - S3 버킷 관리
+
+**목적**: S3 버킷의 생성, 설정, 관리를 담당합니다.
+
+#### 주요 함수
+
+**`bucketExists(client: S3Client, bucketName: string): Promise<boolean>`**
+
+S3 버킷의 존재 여부를 확인합니다.
+
+```typescript
+import { bucketExists } from './s3-bucket.js';
+
+const exists = await bucketExists(s3Client, 'my-bucket');
+
+if (exists) {
+  console.log('Bucket already exists');
+} else {
+  console.log('Bucket does not exist');
+}
+```
+
+**`createBucket(client: S3Client, bucketName: string, region: string): Promise<void>`**
+
+S3 버킷을 생성합니다.
+
+```typescript
+await createBucket(s3Client, 'my-bucket', 'ap-northeast-2');
+console.log('Bucket created successfully');
+```
+
+**리전별 설정:**
+- `us-east-1`: `CreateBucketConfiguration` 불필요
+- 기타 리전: `LocationConstraint` 필수
+
+```typescript
+// us-east-1
+{ Bucket: 'my-bucket' }
+
+// ap-northeast-2
+{
+  Bucket: 'my-bucket',
+  CreateBucketConfiguration: {
+    LocationConstraint: 'ap-northeast-2'
+  }
+}
+```
+
+**`configureBucketWebsite(client: S3Client, bucketName: string, indexDocument?: string, errorDocument?: string): Promise<void>`**
+
+Static Website Hosting을 설정합니다.
+
+```typescript
+await configureBucketWebsite(
+  s3Client,
+  'my-bucket',
+  'index.html',
+  '404.html'
+);
+```
+
+**설정 내용:**
+```json
+{
+  "IndexDocument": {
+    "Suffix": "index.html"
+  },
+  "ErrorDocument": {
+    "Key": "404.html"
+  }
+}
+```
+
+**`setBucketPublicReadPolicy(client: S3Client, bucketName: string): Promise<void>`**
+
+버킷에 Public Read 정책을 설정합니다.
+
+```typescript
+await setBucketPublicReadPolicy(s3Client, 'my-bucket');
+```
+
+**설정되는 정책:**
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PublicReadGetObject",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::my-bucket/*"
+    }
+  ]
+}
+```
+
+**주의:** Public Access Block을 먼저 제거합니다.
+
+**`ensureBucket(client: S3Client, bucketName: string, region: string, options?): Promise<void>`**
+
+버킷 존재 확인 및 설정을 한 번에 처리합니다.
+
+```typescript
+await ensureBucket(s3Client, 'my-bucket', 'ap-northeast-2', {
+  websiteHosting: true,
+  indexDocument: 'index.html',
+  errorDocument: '404.html',
+  publicRead: true,
+});
+```
+
+**옵션:**
+```typescript
+interface EnsureBucketOptions {
+  websiteHosting?: boolean;  // Static Website 활성화 (기본: true)
+  indexDocument?: string;    // Index 문서 (기본: 'index.html')
+  errorDocument?: string;    // Error 문서
+  publicRead?: boolean;      // Public Read 정책 (기본: true)
+}
+```
+
+**프로세스:**
+1. 버킷 존재 확인
+2. 없으면 생성
+3. Website Hosting 설정 (옵션)
+4. Public Read 정책 설정 (옵션)
+
+**`getBucketWebsiteUrl(bucketName: string, region: string): string`**
+
+버킷의 Website URL을 생성합니다.
+
+```typescript
+const url = getBucketWebsiteUrl('my-bucket', 'ap-northeast-2');
+console.log(url);
+// → "http://my-bucket.s3-website.ap-northeast-2.amazonaws.com"
+```
+
+**리전별 URL 형식:**
+```typescript
+// us-east-1
+"http://{bucket}.s3-website-us-east-1.amazonaws.com"
+
+// 기타 리전
+"http://{bucket}.s3-website.{region}.amazonaws.com"
+```
+
+#### 사용 시나리오
+
+**배포 전 버킷 준비:**
+```typescript
+import { ensureBucket, getBucketWebsiteUrl } from './s3-bucket.js';
+
+async function prepareDeployment() {
+  const bucketName = 'my-website';
+  const region = 'ap-northeast-2';
+
+  console.log('Preparing S3 bucket...');
+
+  await ensureBucket(s3Client, bucketName, region, {
+    websiteHosting: true,
+    publicRead: true,
+  });
+
+  const websiteUrl = getBucketWebsiteUrl(bucketName, region);
+  console.log(`Website will be available at: ${websiteUrl}`);
+}
+```
+
+**에러 처리:**
+```typescript
+try {
+  await createBucket(s3Client, bucketName, region);
+} catch (error) {
+  if (error.name === 'BucketAlreadyOwnedByYou') {
+    console.log('Bucket already exists and is owned by you');
+  } else if (error.name === 'BucketAlreadyExists') {
+    throw new Error('Bucket name is already taken by another account');
+  } else {
+    throw error;
+  }
+}
+```
+
+---
+
+### 5. `s3-deployer.ts` - S3 배포 오케스트레이터
+
+**목적**: 전체 S3 배포 프로세스를 조율하고 진행 상황을 표시합니다.
+
+#### 주요 함수
+
+**`deployToS3(config: SCFConfig, options?: UploadOptions): Promise<DeploymentStats>`**
+
+S3에 정적 사이트를 배포하는 메인 함수입니다.
+
+```typescript
+import { deployToS3 } from './s3-deployer.js';
+
+const stats = await deployToS3(config, {
+  gzip: true,
+  concurrency: 10,
+  showProgress: true,
+  dryRun: false,
+});
+
+console.log(`
+  Total files: ${stats.totalFiles}
+  Uploaded: ${stats.uploaded}
+  Skipped: ${stats.skipped}
+  Failed: ${stats.failed}
+  Duration: ${(stats.duration / 1000).toFixed(2)}s
+`);
+```
+
+**반환 타입:**
+```typescript
+interface DeploymentStats {
+  totalFiles: number;       // 스캔된 총 파일 수
+  uploaded: number;         // 업로드된 파일 수
+  skipped: number;          // 스킵된 파일 수 (변경 없음)
+  failed: number;           // 실패한 파일 수
+  totalSize: number;        // 총 파일 크기 (bytes)
+  compressedSize: number;   // 압축 후 크기 (bytes)
+  duration: number;         // 배포 소요 시간 (ms)
+  results: UploadResult[];  // 개별 파일 업로드 결과
+}
+```
+
+#### 배포 프로세스
+
+**1단계: 버킷 확인 및 설정**
+```
+✓ Checking S3 bucket...
+✓ S3 bucket ready: my-bucket
+```
+
+**2단계: 파일 스캔**
+```
+✓ Scanning files...
+✓ Found 42 files (2.3 MB)
+```
+
+**3단계: 파일 업로드**
+```
+📤 Uploading files...
+
+Progress |████████████████████| 100% | 42/42 files | main.js
+```
+
+**4단계: 결과 표시**
+```
+✓ Uploaded: 40 files
+○ Skipped: 2 files (unchanged)
+✗ Failed: 0 files
+
+Total size: 2.3 MB
+Compressed: 1.1 MB (52% reduction)
+Duration: 3.45s
+
+🌐 Website URL: http://my-bucket.s3-website.ap-northeast-2.amazonaws.com
+```
+
+#### 옵션 설정
+
+```typescript
+interface UploadOptions {
+  gzip?: boolean;         // Gzip 압축 (기본: true)
+  concurrency?: number;   // 동시 업로드 수 (기본: 10)
+  showProgress?: boolean; // Progress 표시 (기본: true)
+  dryRun?: boolean;       // 실제 업로드 안함 (기본: false)
+}
+```
+
+**예시:**
+
+```typescript
+// 프로덕션 배포 (압축 + 병렬)
+await deployToS3(config, {
+  gzip: true,
+  concurrency: 20,
+  showProgress: true,
+});
+
+// Dry-run (테스트)
+await deployToS3(config, {
+  dryRun: true,
+  showProgress: true,
+});
+
+// 느린 네트워크
+await deployToS3(config, {
+  concurrency: 5,
+  showProgress: true,
+});
+```
+
+#### UI 컴포넌트
+
+**Spinner (ora)**
+```typescript
+const spinner = ora('Checking S3 bucket...').start();
+// ... 작업 수행
+spinner.succeed('S3 bucket ready');
+```
+
+**Progress Bar (cli-progress)**
+```typescript
+const progressBar = new cliProgress.SingleBar({
+  format: 'Progress |{bar}| {percentage}% | {value}/{total} files',
+});
+
+progressBar.start(totalFiles, 0);
+// ... 업로드 진행
+progressBar.update(completed);
+progressBar.stop();
+```
+
+**컬러 출력 (chalk)**
+```typescript
+console.log(chalk.green('✓ Uploaded: 40 files'));
+console.log(chalk.gray('○ Skipped: 2 files'));
+console.log(chalk.red('✗ Failed: 0 files'));
+console.log(chalk.cyan('http://my-bucket.s3-website...'));
+```
+
+#### Config 검증
+
+배포 전 필수 설정을 검증합니다:
+
+```typescript
+if (!config.s3) {
+  throw new Error('S3 configuration is required');
+}
+
+const {
+  bucketName,   // 필수
+  buildDir,     // 필수
+  indexDocument = 'index.html',
+  errorDocument,
+  websiteHosting = true,
+  gzip = true,
+  concurrency = 10,
+  exclude = [],
+} = config.s3;
+```
+
+#### 에러 처리
+
+```typescript
+try {
+  const stats = await deployToS3(config);
+} catch (error) {
+  if (error.message.includes('S3 configuration is required')) {
+    console.error('Please configure S3 in your scf.config.ts');
+  } else if (error.message.includes('Bucket')) {
+    console.error('Bucket error:', error.message);
+  } else {
+    console.error('Deployment failed:', error);
+  }
+}
+```
+
+#### 전체 사용 예시
+
+```typescript
+import { loadConfig, deployToS3 } from 'scf';
+
+async function deploy() {
+  try {
+    // 1. Config 로드
+    const config = await loadConfig({ env: 'prod' });
+
+    // 2. 배포
+    console.log('🚀 Starting deployment...\n');
+
+    const stats = await deployToS3(config, {
+      gzip: true,
+      concurrency: 10,
+      showProgress: true,
+    });
+
+    // 3. 결과 확인
+    if (stats.failed > 0) {
+      console.error('\n❌ Deployment completed with errors');
+      process.exit(1);
+    }
+
+    console.log('\n✅ Deployment successful!');
+    console.log(`   ${stats.uploaded} files uploaded`);
+    console.log(`   ${(stats.duration / 1000).toFixed(2)}s elapsed`);
+
+  } catch (error) {
+    console.error('❌ Deployment failed:', error.message);
+    process.exit(1);
+  }
+}
+
+deploy();
+```
+
+#### 성능 최적화
+
+**1. 동시성 조정**
+```typescript
+// 빠른 네트워크
+{ concurrency: 20 }
+
+// 일반 네트워크
+{ concurrency: 10 }
+
+// 느린 네트워크
+{ concurrency: 5 }
+```
+
+**2. Gzip 압축**
+```typescript
+// 압축 활성화 (권장)
+{ gzip: true }
+
+// 압축률: 평균 60-70%
+// HTML: 73%
+// CSS: 76%
+// JS: 66%
+```
+
+**3. 파일 제외**
+```typescript
+// scf.config.ts
+export default defineConfig({
+  s3: {
+    exclude: [
+      '**/*.map',     // Source maps
+      '**/.DS_Store', // macOS
+      '**/Thumbs.db', // Windows
+    ],
+  },
+});
+```
+
+---
+
 ## 📚 참고 자료
 
 - [AWS SDK for JavaScript v3](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/)
@@ -813,9 +1257,20 @@ aws sts get-caller-identity
 
 ## 📝 TODO
 
+### Credentials & Auth
 - [ ] Credentials 캐싱 지원 (성능 최적화)
 - [ ] MFA (Multi-Factor Authentication) 지원
 - [ ] Assume Role 지원 (Cross-account 배포)
 - [ ] Credentials 만료 자동 갱신
+
+### S3 Deployment
+- [ ] 증분 배포 (State 관리 연동)
+- [ ] 병렬 해시 계산
+- [ ] 청크 업로드 progress (Multipart)
+- [ ] S3 Transfer Acceleration 지원
+- [ ] 버킷 버전 관리 지원
+
+### 공통
 - [ ] Retry 전략 커스터마이징
 - [ ] CloudWatch Logs 통합
+- [ ] 배포 롤백 기능

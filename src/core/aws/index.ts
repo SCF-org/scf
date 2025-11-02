@@ -26,6 +26,21 @@ export {
   type ClientOptions,
 } from './client.js';
 
+// S3 Bucket management
+export {
+  bucketExists,
+  createBucket,
+  configureBucketWebsite,
+  setBucketPublicReadPolicy,
+  ensureBucket,
+  getBucketWebsiteUrl,
+} from './s3-bucket.js';
+
+// S3 Deployer
+export {
+  deployToS3,
+} from './s3-deployer.js';
+
 // Re-export types
 export type {
   AWSCredentials,
