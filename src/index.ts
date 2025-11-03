@@ -8,11 +8,10 @@
 export * from './types/config.js';
 export * from './types/aws.js';
 export * from './types/deployer.js';
+export * from './types/state.js';
 
 // Export core functionality
 export * from './core/config/index.js';
 export * from './core/aws/index.js';
 export * from './core/deployer/index.js';
-
-// Will be implemented
-// export * from './core/state/index.js';
+export * from './core/state/index.js';
