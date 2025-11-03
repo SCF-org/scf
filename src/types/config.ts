@@ -158,10 +158,3 @@ export interface LoadConfigOptions {
   /** AWS profile override */
   profile?: string;
 }
-
-/**
- * Helper function for defining config with type safety and IntelliSense
- */
-export function defineConfig(config: SCFConfig): SCFConfig {
-  return config;
-}
