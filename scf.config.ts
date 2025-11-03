@@ -1,9 +1,8 @@
 /**
  * SCF Deploy Configuration
  *
- * For TypeScript support, you can use:
- * import { defineConfig } from 'scf-deploy';
- * export default defineConfig({ ... });
+ * Build directory is auto-detected (dist, build, out, etc.)
+ * You can override it by adding: s3: { buildDir: './custom-dir' }
  */
 const config = {
   app: 'my-app',
@@ -11,7 +10,6 @@ const config = {
 
   s3: {
     bucketName: 'my-app-bucket',
-    buildDir: './dist',
     indexDocument: 'index.html',
     errorDocument: '404.html',
   },

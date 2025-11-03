@@ -30,7 +30,10 @@ const s3ConfigSchema = z
         /^[a-z0-9][a-z0-9.-]*[a-z0-9]$/,
         "Bucket name must follow S3 naming rules"
       ),
-    buildDir: z.string().min(1, "Build directory is required"),
+    buildDir: z
+      .string()
+      .min(1, "Build directory cannot be empty")
+      .optional(),
     indexDocument: z.string().default("index.html"),
     errorDocument: z.string().optional(),
     websiteHosting: z.boolean().default(true),
@@ -58,6 +61,7 @@ const cloudfrontConfigSchema = z
     enabled: z.boolean(),
     priceClass: z
       .enum(["PriceClass_100", "PriceClass_200", "PriceClass_All"])
+      .optional()
       .default("PriceClass_100"),
     customDomain: z
       .object({

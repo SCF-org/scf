@@ -9,6 +9,8 @@ import {
   PutBucketWebsiteCommand,
   PutBucketPolicyCommand,
   DeletePublicAccessBlockCommand,
+  PutBucketTaggingCommand,
+  GetBucketTaggingCommand,
   type BucketLocationConstraint,
 } from '@aws-sdk/client-s3';
 
@@ -176,6 +178,63 @@ export async function ensureBucket(
   // Set public read policy
   if (publicRead) {
     await setBucketPublicReadPolicy(client, bucketName);
+  }
+}
+
+/**
+ * Tag bucket for state recovery
+ */
+export async function tagBucketForRecovery(
+  client: S3Client,
+  bucketName: string,
+  app: string,
+  environment: string
+): Promise<void> {
+  try {
+    await client.send(
+      new PutBucketTaggingCommand({
+        Bucket: bucketName,
+        Tagging: {
+          TagSet: [
+            { Key: 'scf:managed', Value: 'true' },
+            { Key: 'scf:app', Value: app },
+            { Key: 'scf:environment', Value: environment },
+            { Key: 'scf:tool', Value: 'scf-deploy' },
+          ],
+        },
+      })
+    );
+  } catch (error) {
+    // Non-critical error, just log it
+    console.warn('Warning: Failed to tag S3 bucket for recovery');
+  }
+}
+
+/**
+ * Get bucket tags
+ */
+export async function getBucketTags(
+  client: S3Client,
+  bucketName: string
+): Promise<Record<string, string>> {
+  try {
+    const result = await client.send(
+      new GetBucketTaggingCommand({
+        Bucket: bucketName,
+      })
+    );
+
+    const tags: Record<string, string> = {};
+    if (result.TagSet) {
+      for (const tag of result.TagSet) {
+        if (tag.Key && tag.Value) {
+          tags[tag.Key] = tag.Value;
+        }
+      }
+    }
+    return tags;
+  } catch {
+    return {};
   }
 }
 

@@ -84,9 +84,7 @@ export function validateRequiredFields(config: SCFConfig): void {
     errors.push('s3.bucketName is required when s3 is configured');
   }
 
-  if (config.s3 && !config.s3.buildDir) {
-    errors.push('s3.buildDir is required when s3 is configured');
-  }
+  // buildDir is now optional - it will be auto-detected during deployment
 
   if (
     config.cloudfront?.enabled &&

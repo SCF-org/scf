@@ -70,8 +70,18 @@ export interface S3Config {
   /** S3 bucket name */
   bucketName: string;
 
-  /** Build directory to upload */
-  buildDir: string;
+  /**
+   * Build directory to upload (optional, auto-detected if not provided)
+   *
+   * If not specified, scf will automatically detect common build directories:
+   * - dist (Vite, Rollup)
+   * - build (Create React App, Next.js)
+   * - out (Next.js static export)
+   * - .next (Next.js production)
+   * - public (Static sites)
+   * - And more...
+   */
+  buildDir?: string;
 
   /** Index document for static website hosting */
   indexDocument?: string;

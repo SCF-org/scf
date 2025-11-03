@@ -7,6 +7,7 @@ import { createInitCommand } from "./commands/init.js";
 import { createDeployCommand } from "./commands/deploy.js";
 import { createRemoveCommand } from "./commands/remove.js";
 import { createStatusCommand } from "./commands/status.js";
+import { createRecoverCommand } from "./commands/recover.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -43,6 +44,7 @@ export function createProgram(): Command {
   program.addCommand(createDeployCommand());
   program.addCommand(createRemoveCommand());
   program.addCommand(createStatusCommand());
+  program.addCommand(createRecoverCommand());
 
   return program;
 }

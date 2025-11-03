@@ -9,8 +9,9 @@ import cliProgress from "cli-progress";
 import type { SCFConfig } from "../../types/config.js";
 import type { DeploymentStats, UploadOptions } from "../../types/deployer.js";
 import { createS3Client } from "./client.js";
-import { ensureBucket, getBucketWebsiteUrl } from "./s3-bucket.js";
+import { ensureBucket, getBucketWebsiteUrl, tagBucketForRecovery } from "./s3-bucket.js";
 import { scanFiles } from "../deployer/file-scanner.js";
+import { getBuildDirectory } from "../deployer/build-detector.js";
 import {
   uploadFiles,
   calculateTotalSize,
@@ -43,7 +44,7 @@ export async function deployToS3(
 
   const {
     bucketName,
-    buildDir,
+    buildDir: providedBuildDir,
     indexDocument = "index.html",
     errorDocument,
     websiteHosting = true,
@@ -61,34 +62,19 @@ export async function deployToS3(
     saveState: shouldSaveState = true,
   } = options;
 
-  // Create S3 client
-  const s3Client = createS3Client(config);
-
-  // Step 1: Ensure bucket exists and is configured
+  // Step 1: Detect and validate build directory
   let spinner: Ora | null = null;
   if (showProgress) {
-    spinner = ora("Checking S3 bucket...").start();
+    spinner = ora("Detecting build directory...").start();
   }
 
-  try {
-    await ensureBucket(s3Client, bucketName, config.region, {
-      websiteHosting,
-      indexDocument,
-      errorDocument,
-      publicRead: true,
-    });
+  const buildDir = getBuildDirectory(providedBuildDir);
 
-    if (spinner) {
-      spinner.succeed(`S3 bucket ready: ${chalk.cyan(bucketName)}`);
-    }
-  } catch (error) {
-    if (spinner) {
-      spinner.fail("Failed to setup S3 bucket");
-    }
-    throw error;
+  if (spinner) {
+    spinner.succeed(`Build directory detected: ${chalk.cyan(buildDir)}`);
   }
 
-  // Step 2: Scan files
+  // Step 2: Scan files (BEFORE creating AWS resources)
   if (showProgress) {
     spinner = ora("Scanning files...").start();
   }
@@ -108,21 +94,47 @@ export async function deployToS3(
     );
   }
 
+  // IMPORTANT: Validate files exist before creating AWS resources
   if (files.length === 0) {
-    console.log(chalk.yellow("⚠ No files to deploy"));
-    return {
-      totalFiles: 0,
-      uploaded: 0,
-      skipped: 0,
-      failed: 0,
-      totalSize: 0,
-      compressedSize: 0,
-      duration: Date.now() - startTime,
-      results: [],
-    };
+    throw new Error(
+      `No files found in build directory: ${chalk.cyan(buildDir)}\n\n` +
+      `Please build your project first:\n` +
+      `  ${chalk.cyan('npm run build')}\n` +
+      `  ${chalk.cyan('yarn build')}\n` +
+      `  ${chalk.cyan('pnpm build')}`
+    );
   }
 
-  // Step 2.5: Load state and determine files to upload (incremental deployment)
+  // Create S3 client
+  const s3Client = createS3Client(config);
+
+  // Step 3: Ensure bucket exists and is configured (AFTER validating files)
+  if (showProgress) {
+    spinner = ora("Checking S3 bucket...").start();
+  }
+
+  try {
+    await ensureBucket(s3Client, bucketName, config.region, {
+      websiteHosting,
+      indexDocument,
+      errorDocument,
+      publicRead: true,
+    });
+
+    // Tag bucket for state recovery
+    await tagBucketForRecovery(s3Client, bucketName, config.app, environment);
+
+    if (spinner) {
+      spinner.succeed(`S3 bucket ready: ${chalk.cyan(bucketName)}`);
+    }
+  } catch (error) {
+    if (spinner) {
+      spinner.fail("Failed to setup S3 bucket");
+    }
+    throw error;
+  }
+
+  // Step 4: Load state and determine files to upload (incremental deployment)
   let state = loadState({ environment });
   let filesToUpload = files;
 
@@ -177,7 +189,7 @@ export async function deployToS3(
     console.log(chalk.blue("\n📤 Uploading files...\n"));
   }
 
-  // Step 3: Upload files
+  // Step 5: Upload files
 
   let progressBar: cliProgress.SingleBar | null = null;
 
@@ -275,7 +287,7 @@ export async function deployToS3(
     console.log(chalk.green("🌐 Website URL:"), chalk.cyan(websiteUrl));
   }
 
-  // Step 4: Save state
+  // Step 6: Save state
   if (shouldSaveState && !dryRun && uploaded > 0) {
     // Get or create state
     if (!state) {

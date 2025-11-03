@@ -9,6 +9,8 @@ import { loadConfig } from '../../core/config/index.js';
 import { getCredentials, verifyCredentials } from '../../core/aws/index.js';
 import { deployToS3 } from '../../core/aws/s3-deployer.js';
 import { deployToCloudFront } from '../../core/aws/cloudfront-deployer.js';
+import { autoBuild } from '../../core/deployer/auto-builder.js';
+import { ensureDeployInGitignore } from '../../core/utils/gitignore.js';
 
 /**
  * Deploy command options
@@ -21,6 +23,7 @@ interface DeployOptions {
   noCloudfront?: boolean;
   force?: boolean;
   skipCache?: boolean;
+  skipBuild?: boolean;
 }
 
 /**
@@ -38,6 +41,7 @@ export function createDeployCommand(): Command {
     .option('--no-cloudfront', 'Skip CloudFront deployment')
     .option('--force', 'Force full deployment (ignore state)')
     .option('--skip-cache', 'Skip CloudFront cache invalidation')
+    .option('--skip-build', 'Skip automatic build before deployment')
     .action(async (options: DeployOptions) => {
       try {
         await deployCommand(options);
@@ -63,6 +67,7 @@ async function deployCommand(options: DeployOptions): Promise<void> {
     noCloudfront = false,
     force = false,
     skipCache = false,
+    skipBuild = false,
   } = options;
 
   // Header
@@ -70,7 +75,17 @@ async function deployCommand(options: DeployOptions): Promise<void> {
   console.log(chalk.bold.blue('=� SCF Deployment'));
   console.log();
 
-  // Step 1: Load config
+  // Step 1: Auto-build project
+  try {
+    await autoBuild({
+      showProgress: true,
+      skipBuild,
+    });
+  } catch (error) {
+    throw error;
+  }
+
+  // Step 2: Load config
   logger.info('Loading configuration...');
   const config = await loadConfig({
     configPath,
@@ -96,7 +111,7 @@ async function deployCommand(options: DeployOptions): Promise<void> {
     logger.warn('Force mode enabled - all files will be re-uploaded');
   }
 
-  // Step 2: Verify credentials
+  // Step 3: Verify credentials
   console.log();
   logger.info('Verifying AWS credentials...');
 
@@ -107,7 +122,7 @@ async function deployCommand(options: DeployOptions): Promise<void> {
   logger.keyValue('Account ID', accountInfo.accountId);
   logger.keyValue('User ARN', accountInfo.arn);
 
-  // Step 3: Deploy to S3
+  // Step 4: Deploy to S3
   logger.section('S3 Deployment');
 
   const s3Stats = await deployToS3(config, {
@@ -117,7 +132,7 @@ async function deployCommand(options: DeployOptions): Promise<void> {
     showProgress: true,
   });
 
-  // Step 4: Deploy to CloudFront (if enabled)
+  // Step 5: Deploy to CloudFront (if enabled)
   if (config.cloudfront?.enabled && !noCloudfront && !dryRun) {
     logger.section('CloudFront Deployment');
 
@@ -152,6 +167,9 @@ async function deployCommand(options: DeployOptions): Promise<void> {
     console.log();
     console.log(chalk.green.bold('( Deployment completed successfully!'));
   }
+
+  // Ensure .gitignore has .deploy entry (after first deployment)
+  ensureDeployInGitignore(undefined, true);
 
   console.log();
 }

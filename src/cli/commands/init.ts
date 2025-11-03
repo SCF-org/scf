@@ -7,34 +7,14 @@ import inquirer from 'inquirer';
 import fs from 'node:fs';
 import path from 'node:path';
 import chalk from 'chalk';
+import { ensureDeployInGitignore } from '../../core/utils/gitignore.js';
 
 interface InitAnswers {
   app: string;
   region: string;
   bucketName: string;
-  buildDir: string;
   enableCloudFront: boolean;
-  template?: 'custom' | 'react' | 'vue' | 'next';
 }
-
-const TEMPLATES = {
-  custom: {
-    buildDir: './dist',
-    description: 'Custom configuration',
-  },
-  react: {
-    buildDir: './build',
-    description: 'React (Create React App)',
-  },
-  vue: {
-    buildDir: './dist',
-    description: 'Vue.js',
-  },
-  next: {
-    buildDir: './out',
-    description: 'Next.js (Static Export)',
-  },
-};
 
 const AWS_REGIONS = [
   'us-east-1',
@@ -47,14 +27,13 @@ const AWS_REGIONS = [
 ];
 
 function generateConfigContent(answers: InitAnswers): string {
-  const { app, region, bucketName, buildDir, enableCloudFront } = answers;
+  const { app, region, bucketName, enableCloudFront } = answers;
 
   return `/**
  * SCF Deploy Configuration
  *
- * For TypeScript support, you can use:
- * import { defineConfig } from 'scf-deploy';
- * export default defineConfig({ ... });
+ * Build directory is auto-detected (dist, build, out, etc.)
+ * You can override it by adding: s3: { buildDir: './custom-dir' }
  */
 const config = {
   app: '${app}',
@@ -62,14 +41,12 @@ const config = {
 
   s3: {
     bucketName: '${bucketName}',
-    buildDir: '${buildDir}',
     indexDocument: 'index.html',
     errorDocument: '404.html',
   },
 
   cloudfront: {
     enabled: ${enableCloudFront},
-    priceClass: 'PriceClass_100',
   },
 
   // Environment-specific overrides
@@ -83,7 +60,6 @@ const config = {
     },
     prod: {
       s3: { bucketName: '${bucketName}-prod' },
-      cloudfront: { priceClass: 'PriceClass_All' },
     },
   },
 };
@@ -99,26 +75,12 @@ async function promptUser(interactive: boolean): Promise<InitAnswers> {
       app: 'my-app',
       region: 'us-east-1',
       bucketName: 'my-app-bucket',
-      buildDir: './dist',
       enableCloudFront: true,
-      template: 'custom',
     };
   }
 
   // Interactive mode
   const answers = await inquirer.prompt<InitAnswers>([
-    {
-      type: 'list',
-      name: 'template',
-      message: 'Select a template:',
-      choices: [
-        { name: 'Custom configuration', value: 'custom' },
-        { name: 'React (Create React App)', value: 'react' },
-        { name: 'Vue.js', value: 'vue' },
-        { name: 'Next.js (Static Export)', value: 'next' },
-      ],
-      default: 'custom',
-    },
     {
       type: 'input',
       name: 'app',
@@ -151,15 +113,6 @@ async function promptUser(interactive: boolean): Promise<InitAnswers> {
       },
     },
     {
-      type: 'input',
-      name: 'buildDir',
-      message: 'Build directory:',
-      default: (answers: Partial<InitAnswers>) => {
-        const template = answers.template || 'custom';
-        return TEMPLATES[template].buildDir;
-      },
-    },
-    {
       type: 'confirm',
       name: 'enableCloudFront',
       message: 'Enable CloudFront CDN?',
@@ -175,10 +128,6 @@ export function createInitCommand(): Command {
     .description('Initialize scf.config.ts configuration file')
     .option('-f, --force', 'Overwrite existing config file')
     .option('-y, --yes', 'Skip prompts and use default values')
-    .option(
-      '-t, --template <template>',
-      'Use template (custom, react, vue, next)'
-    )
     .action(async (options) => {
       const configPath = path.join(process.cwd(), 'scf.config.ts');
       const configExists = fs.existsSync(configPath);
@@ -206,6 +155,10 @@ export function createInitCommand(): Command {
 
         console.log(chalk.green('\n✅ Configuration file created successfully!\n'));
         console.log(chalk.dim('📄 Created: scf.config.ts\n'));
+
+        // Ensure .gitignore has .deploy entry
+        ensureDeployInGitignore();
+        console.log();
 
         // Show next steps
         console.log(chalk.bold('Next steps:\n'));
