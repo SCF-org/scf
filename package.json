@@ -1,6 +1,6 @@
 {
   "name": "scf-deploy",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "S3 + CloudFront static deployment automation CLI",
   "type": "module",
   "author": "jeonghodong <fire13764@gmail.com>",
