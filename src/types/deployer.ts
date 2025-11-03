@@ -39,7 +39,7 @@ export interface UploadResult {
   success: boolean;
 
   /** Upload status */
-  status: 'uploaded' | 'skipped' | 'failed';
+  status: "uploaded" | "skipped" | "failed";
 
   /** Error message if failed */
   error?: string;
@@ -92,6 +92,18 @@ export interface UploadOptions {
 
   /** Whether to perform dry-run (no actual upload) */
   dryRun?: boolean;
+
+  /** Environment name for state management */
+  environment?: string;
+
+  /** Whether to use incremental deployment (default: true) */
+  useIncrementalDeploy?: boolean;
+
+  /** Force full deployment (ignore state, upload all files) */
+  forceFullDeploy?: boolean;
+
+  /** Whether to save state after deployment (default: true) */
+  saveState?: boolean;
 }
 
 /**

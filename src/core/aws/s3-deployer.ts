@@ -1,20 +1,31 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * S3 Deployer - Main deployment orchestrator
  */
 
-import chalk from 'chalk';
-import ora, { type Ora } from 'ora';
-import cliProgress from 'cli-progress';
-import type { SCFConfig } from '../../types/config.js';
-import type { DeploymentStats, UploadOptions } from '../../types/deployer.js';
-import { createS3Client } from './client.js';
-import { ensureBucket, getBucketWebsiteUrl } from './s3-bucket.js';
-import { scanFiles } from '../deployer/file-scanner.js';
+import chalk from "chalk";
+import ora, { type Ora } from "ora";
+import cliProgress from "cli-progress";
+import type { SCFConfig } from "../../types/config.js";
+import type { DeploymentStats, UploadOptions } from "../../types/deployer.js";
+import { createS3Client } from "./client.js";
+import { ensureBucket, getBucketWebsiteUrl } from "./s3-bucket.js";
+import { scanFiles } from "../deployer/file-scanner.js";
 import {
   uploadFiles,
   calculateTotalSize,
   formatBytes,
-} from '../deployer/s3-uploader.js';
+} from "../deployer/s3-uploader.js";
+import {
+  loadState,
+  saveState,
+  getOrCreateState,
+  getFilesToUpload,
+  compareFileHashes,
+  updateFileHashes,
+  updateS3Resource,
+  formatFileChanges,
+} from "../state/index.js";
 
 /**
  * Deploy to S3
@@ -27,13 +38,13 @@ export async function deployToS3(
 
   // Validate S3 config
   if (!config.s3) {
-    throw new Error('S3 configuration is required');
+    throw new Error("S3 configuration is required");
   }
 
   const {
     bucketName,
     buildDir,
-    indexDocument = 'index.html',
+    indexDocument = "index.html",
     errorDocument,
     websiteHosting = true,
     gzip = true,
@@ -41,7 +52,14 @@ export async function deployToS3(
     exclude = [],
   } = config.s3;
 
-  const { showProgress = true, dryRun = false } = options;
+  const {
+    showProgress = true,
+    dryRun = false,
+    environment = "default",
+    useIncrementalDeploy = true,
+    forceFullDeploy = false,
+    saveState: shouldSaveState = true,
+  } = options;
 
   // Create S3 client
   const s3Client = createS3Client(config);
@@ -49,7 +67,7 @@ export async function deployToS3(
   // Step 1: Ensure bucket exists and is configured
   let spinner: Ora | null = null;
   if (showProgress) {
-    spinner = ora('Checking S3 bucket...').start();
+    spinner = ora("Checking S3 bucket...").start();
   }
 
   try {
@@ -65,14 +83,14 @@ export async function deployToS3(
     }
   } catch (error) {
     if (spinner) {
-      spinner.fail('Failed to setup S3 bucket');
+      spinner.fail("Failed to setup S3 bucket");
     }
     throw error;
   }
 
   // Step 2: Scan files
   if (showProgress) {
-    spinner = ora('Scanning files...').start();
+    spinner = ora("Scanning files...").start();
   }
 
   const files = await scanFiles({
@@ -84,12 +102,14 @@ export async function deployToS3(
 
   if (spinner) {
     spinner.succeed(
-      `Found ${chalk.cyan(files.length)} files (${chalk.cyan(formatBytes(totalSize))})`
+      `Found ${chalk.cyan(files.length)} files (${chalk.cyan(
+        formatBytes(totalSize)
+      )})`
     );
   }
 
   if (files.length === 0) {
-    console.log(chalk.yellow('⚠ No files to deploy'));
+    console.log(chalk.yellow("⚠ No files to deploy"));
     return {
       totalFiles: 0,
       uploaded: 0,
@@ -102,8 +122,62 @@ export async function deployToS3(
     };
   }
 
+  // Step 2.5: Load state and determine files to upload (incremental deployment)
+  let state = loadState({ environment });
+  let filesToUpload = files;
+
+  if (useIncrementalDeploy && !forceFullDeploy && state) {
+    if (showProgress) {
+      spinner = ora("Analyzing file changes...").start();
+    }
+
+    const changes = compareFileHashes(files, state.files);
+
+    if (spinner) {
+      spinner.succeed("File changes analyzed");
+    }
+
+    // Show changes
+    console.log();
+    console.log(formatFileChanges(changes));
+    console.log();
+
+    if (changes.totalChanges === 0) {
+      console.log(
+        chalk.green("✨ No changes detected. Deployment not needed.")
+      );
+      return {
+        totalFiles: files.length,
+        uploaded: 0,
+        skipped: files.length,
+        failed: 0,
+        totalSize,
+        compressedSize: totalSize,
+        duration: Date.now() - startTime,
+        results: files.map((file) => ({
+          file,
+          success: true,
+          status: "skipped" as const,
+        })),
+      };
+    }
+
+    // Get only changed files
+    filesToUpload = getFilesToUpload(files, state.files);
+    console.log(
+      chalk.blue(
+        `📤 Uploading ${chalk.cyan(filesToUpload.length)} changed files...\n`
+      )
+    );
+  } else {
+    // Full deployment
+    if (forceFullDeploy && showProgress) {
+      console.log(chalk.yellow("⚠ Force full deployment enabled\n"));
+    }
+    console.log(chalk.blue("\n📤 Uploading files...\n"));
+  }
+
   // Step 3: Upload files
-  console.log(chalk.blue('\n📤 Uploading files...\n'));
 
   let progressBar: cliProgress.SingleBar | null = null;
 
@@ -111,22 +185,22 @@ export async function deployToS3(
     progressBar = new cliProgress.SingleBar(
       {
         format:
-          'Progress |' +
-          chalk.cyan('{bar}') +
-          '| {percentage}% | {value}/{total} files | {current}',
-        barCompleteChar: '\u2588',
-        barIncompleteChar: '\u2591',
+          "Progress |" +
+          chalk.cyan("{bar}") +
+          "| {percentage}% | {value}/{total} files | {current}",
+        barCompleteChar: "\u2588",
+        barIncompleteChar: "\u2591",
         hideCursor: true,
       },
       cliProgress.Presets.shades_classic
     );
-    progressBar.start(files.length, 0, { current: '' });
+    progressBar.start(files.length, 0, { current: "" });
   }
 
   const uploadResults = await uploadFiles(
     s3Client,
     bucketName,
-    files,
+    filesToUpload,
     {
       gzip,
       concurrency,
@@ -146,9 +220,9 @@ export async function deployToS3(
   }
 
   // Calculate statistics
-  const uploaded = uploadResults.filter((r) => r.status === 'uploaded').length;
-  const skipped = uploadResults.filter((r) => r.status === 'skipped').length;
-  const failed = uploadResults.filter((r) => r.status === 'failed').length;
+  const uploaded = uploadResults.filter((r) => r.status === "uploaded").length;
+  const skipped = uploadResults.filter((r) => r.status === "skipped").length;
+  const failed = uploadResults.filter((r) => r.status === "failed").length;
 
   const uploadedFiles = uploadResults
     .filter((r) => r.success)
@@ -181,7 +255,9 @@ export async function deployToS3(
     const savingsPercent = Math.round((savings / totalSize) * 100);
     console.log(
       chalk.gray(
-        `Compressed: ${formatBytes(compressedSize)} (${savingsPercent}% reduction)`
+        `Compressed: ${formatBytes(
+          compressedSize
+        )} (${savingsPercent}% reduction)`
       )
     );
   }
@@ -190,10 +266,49 @@ export async function deployToS3(
   console.log(chalk.gray(`Duration: ${(duration / 1000).toFixed(2)}s`));
 
   // Show website URL
+  const websiteUrl = websiteHosting
+    ? getBucketWebsiteUrl(bucketName, config.region)
+    : undefined;
+
   if (websiteHosting && !dryRun) {
-    const websiteUrl = getBucketWebsiteUrl(bucketName, config.region);
     console.log();
-    console.log(chalk.green('🌐 Website URL:'), chalk.cyan(websiteUrl));
+    console.log(chalk.green("🌐 Website URL:"), chalk.cyan(websiteUrl));
+  }
+
+  // Step 4: Save state
+  if (shouldSaveState && !dryRun && uploaded > 0) {
+    // Get or create state
+    if (!state) {
+      state = getOrCreateState(config.app, { environment });
+    }
+
+    // Update S3 resource info
+    state = updateS3Resource(state, {
+      bucketName,
+      region: config.region,
+      websiteUrl,
+    });
+
+    // Update file hashes (all scanned files, not just uploaded)
+    state = updateFileHashes(state, files);
+
+    // Save state
+    try {
+      saveState(state, { environment });
+      if (showProgress) {
+        console.log();
+        console.log(
+          chalk.gray(
+            `✓ State saved (.deploy/state${
+              environment !== "default" ? `.${environment}` : ""
+            }.json)`
+          )
+        );
+      }
+    } catch (error: any) {
+      console.log();
+      console.log(chalk.yellow(`⚠ Failed to save state: ${error.message}`));
+    }
   }
 
   return {

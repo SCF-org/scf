@@ -1,12 +1,13 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * CloudFront Deployer - Main deployment orchestrator
  */
 
-import chalk from 'chalk';
-import ora, { type Ora } from 'ora';
-import type { SCFConfig } from '../../types/config.js';
-import type { DeploymentStats, UploadOptions } from '../../types/deployer.js';
-import { createCloudFrontClient } from './client.js';
+import chalk from "chalk";
+import ora, { type Ora } from "ora";
+import type { SCFConfig } from "../../types/config.js";
+import type { DeploymentStats, UploadOptions } from "../../types/deployer.js";
+import { createCloudFrontClient } from "./client.js";
 import {
   distributionExists,
   getDistribution,
@@ -15,11 +16,15 @@ import {
   waitForDistributionDeployed,
   getDistributionUrl,
   type CreateDistributionOptions,
-} from './cloudfront-distribution.js';
+} from "./cloudfront-distribution.js";
+import { invalidateCache, invalidateAll } from "./cloudfront-invalidation.js";
 import {
-  invalidateCache,
-  invalidateAll,
-} from './cloudfront-invalidation.js';
+  loadState,
+  saveState,
+  getOrCreateState,
+  updateCloudFrontResource,
+  getCloudFrontResource,
+} from "../state/index.js";
 
 /**
  * CloudFront deployment options
@@ -31,6 +36,8 @@ export interface CloudFrontDeploymentOptions {
   waitForDeployment?: boolean;
   waitForInvalidation?: boolean;
   showProgress?: boolean;
+  environment?: string;
+  saveState?: boolean;
 }
 
 /**
@@ -57,11 +64,11 @@ export async function deployToCloudFront(
 
   // Validate CloudFront config
   if (!config.cloudfront?.enabled) {
-    throw new Error('CloudFront is not enabled in configuration');
+    throw new Error("CloudFront is not enabled in configuration");
   }
 
   if (!config.s3?.bucketName) {
-    throw new Error('S3 bucket name is required for CloudFront deployment');
+    throw new Error("S3 bucket name is required for CloudFront deployment");
   }
 
   const {
@@ -71,6 +78,8 @@ export async function deployToCloudFront(
     waitForDeployment = true,
     waitForInvalidation = true,
     showProgress = true,
+    environment = "default",
+    saveState: shouldSaveState = true,
   } = options;
 
   const cloudFrontConfig = config.cloudfront;
@@ -79,22 +88,31 @@ export async function deployToCloudFront(
   // Create CloudFront client
   const cfClient = createCloudFrontClient(config);
 
+  // Load state to get existing distribution ID
+  let state = loadState({ environment });
+  const stateDistributionId = state
+    ? getCloudFrontResource(state)?.distributionId
+    : undefined;
+
+  // Priority: explicit option > state > none
+  const resolvedDistributionId = existingDistributionId || stateDistributionId;
+
   let spinner: Ora | null = null;
   let distributionId: string;
   let isNewDistribution = false;
   let distribution;
 
   // Step 1: Check if distribution exists or create new one
-  if (existingDistributionId) {
+  if (resolvedDistributionId) {
     if (showProgress) {
-      spinner = ora('Checking CloudFront distribution...').start();
+      spinner = ora("Checking CloudFront distribution...").start();
     }
 
-    const exists = await distributionExists(cfClient, existingDistributionId);
+    const exists = await distributionExists(cfClient, resolvedDistributionId);
 
     if (exists) {
-      distribution = await getDistribution(cfClient, existingDistributionId);
-      distributionId = existingDistributionId;
+      distribution = await getDistribution(cfClient, resolvedDistributionId);
+      distributionId = resolvedDistributionId;
 
       if (spinner) {
         spinner.succeed(
@@ -110,7 +128,7 @@ export async function deployToCloudFront(
 
       if (hasUpdates) {
         if (showProgress) {
-          spinner = ora('Updating CloudFront distribution...').start();
+          spinner = ora("Updating CloudFront distribution...").start();
         }
 
         const updateOptions: Partial<CreateDistributionOptions> = {
@@ -129,7 +147,7 @@ export async function deployToCloudFront(
         );
 
         if (spinner) {
-          spinner.succeed('CloudFront distribution updated');
+          spinner.succeed("CloudFront distribution updated");
         }
       }
     } else {
@@ -140,7 +158,7 @@ export async function deployToCloudFront(
   } else {
     // Create new distribution
     if (showProgress) {
-      spinner = ora('Creating CloudFront distribution...').start();
+      spinner = ora("Creating CloudFront distribution...").start();
     }
 
     const createOptions: CreateDistributionOptions = {
@@ -157,7 +175,9 @@ export async function deployToCloudFront(
 
     distribution = await createDistribution(cfClient, createOptions);
     if (!distribution.Id) {
-      throw new Error('Failed to create CloudFront distribution: No ID returned');
+      throw new Error(
+        "Failed to create CloudFront distribution: No ID returned"
+      );
     }
     distributionId = distribution.Id;
     isNewDistribution = true;
@@ -170,9 +190,9 @@ export async function deployToCloudFront(
   }
 
   // Step 2: Wait for distribution to be deployed
-  if (waitForDeployment && distribution?.Status === 'InProgress') {
+  if (waitForDeployment && distribution?.Status === "InProgress") {
     if (showProgress) {
-      spinner = ora('Waiting for distribution deployment...').start();
+      spinner = ora("Waiting for distribution deployment...").start();
     }
 
     try {
@@ -183,15 +203,15 @@ export async function deployToCloudFront(
       });
 
       if (spinner) {
-        spinner.succeed('Distribution deployed');
+        spinner.succeed("Distribution deployed");
       }
     } catch (_error: unknown) {
       if (spinner) {
-        spinner.warn('Distribution deployment is taking longer than expected');
+        spinner.warn("Distribution deployment is taking longer than expected");
       }
       console.log(
         chalk.yellow(
-          '⚠ Distribution is still deploying. You can check status later.'
+          "⚠ Distribution is still deploying. You can check status later."
         )
       );
     }
@@ -202,7 +222,7 @@ export async function deployToCloudFront(
 
   if (shouldInvalidateAll) {
     if (showProgress) {
-      spinner = ora('Invalidating all CloudFront cache...').start();
+      spinner = ora("Invalidating all CloudFront cache...").start();
     }
 
     const invalidation = await invalidateAll(cfClient, distributionId, {
@@ -218,9 +238,7 @@ export async function deployToCloudFront(
     }
   } else if (invalidatePaths && invalidatePaths.length > 0) {
     if (showProgress) {
-      spinner = ora(
-        `Invalidating ${invalidatePaths.length} paths...`
-      ).start();
+      spinner = ora(`Invalidating ${invalidatePaths.length} paths...`).start();
     }
 
     const invalidation = await invalidateCache(
@@ -242,7 +260,7 @@ export async function deployToCloudFront(
   } else if (s3DeploymentStats.uploaded > 0) {
     // Auto-invalidate if files were uploaded
     if (showProgress) {
-      spinner = ora('Invalidating updated files...').start();
+      spinner = ora("Invalidating updated files...").start();
     }
 
     // Invalidate all since we don't track individual file paths yet
@@ -263,26 +281,62 @@ export async function deployToCloudFront(
   const finalDistribution = await getDistribution(cfClient, distributionId);
   const distributionUrl = finalDistribution
     ? getDistributionUrl(finalDistribution)
-    : '';
-  const distributionDomain = finalDistribution?.DomainName || '';
+    : "";
+  const distributionDomain = finalDistribution?.DomainName || "";
 
   const deploymentTime = Date.now() - startTime;
 
   // Display final info
   console.log();
-  console.log(chalk.green('🌐 CloudFront Deployment Complete'));
+  console.log(chalk.green("🌐 CloudFront Deployment Complete"));
   console.log(chalk.gray(`Distribution ID: ${distributionId}`));
   console.log(chalk.gray(`Domain: ${distributionDomain}`));
-  console.log(chalk.green('URL:'), chalk.cyan(distributionUrl));
+  console.log(chalk.green("URL:"), chalk.cyan(distributionUrl));
 
   if (cloudFrontConfig.customDomain) {
     console.log(
-      chalk.green('Custom Domain:'),
+      chalk.green("Custom Domain:"),
       chalk.cyan(`https://${cloudFrontConfig.customDomain.domainName}`)
     );
   }
 
-  console.log(chalk.gray(`Deployment time: ${(deploymentTime / 1000).toFixed(2)}s`));
+  console.log(
+    chalk.gray(`Deployment time: ${(deploymentTime / 1000).toFixed(2)}s`)
+  );
+
+  // Step 4: Save state
+  if (shouldSaveState) {
+    // Get or create state
+    if (!state) {
+      state = getOrCreateState(config.app, { environment });
+    }
+
+    // Update CloudFront resource info
+    state = updateCloudFrontResource(state, {
+      distributionId,
+      domainName: distributionDomain,
+      distributionUrl,
+      aliases: cloudFrontConfig.customDomain?.aliases,
+    });
+
+    // Save state
+    try {
+      saveState(state, { environment });
+      if (showProgress) {
+        console.log();
+        console.log(
+          chalk.gray(
+            `✓ State saved (.deploy/state${
+              environment !== "default" ? `.${environment}` : ""
+            }.json)`
+          )
+        );
+      }
+    } catch (error: any) {
+      console.log();
+      console.log(chalk.yellow(`⚠ Failed to save state: ${error.message}`));
+    }
+  }
 
   return {
     distributionId,
@@ -299,7 +353,10 @@ export async function deployToCloudFront(
  */
 export async function deployWithCloudFront(
   config: SCFConfig,
-  deployToS3: (config: SCFConfig, options?: UploadOptions) => Promise<DeploymentStats>,
+  deployToS3: (
+    config: SCFConfig,
+    options?: UploadOptions
+  ) => Promise<DeploymentStats>,
   options: {
     s3Options?: UploadOptions;
     cloudFrontOptions?: CloudFrontDeploymentOptions;
@@ -310,19 +367,23 @@ export async function deployWithCloudFront(
 }> {
   const { s3Options = {}, cloudFrontOptions = {} } = options;
 
-  console.log(chalk.blue('🚀 Starting deployment...\n'));
+  console.log(chalk.blue("🚀 Starting deployment...\n"));
 
   // Step 1: Deploy to S3
-  console.log(chalk.blue('📦 Step 1: S3 Deployment\n'));
+  console.log(chalk.blue("📦 Step 1: S3 Deployment\n"));
   const s3Stats = await deployToS3(config, s3Options);
 
   // Step 2: Deploy to CloudFront
   if (config.cloudfront?.enabled) {
-    console.log(chalk.blue('\n☁️  Step 2: CloudFront Deployment\n'));
-    const cloudFront = await deployToCloudFront(config, s3Stats, cloudFrontOptions);
+    console.log(chalk.blue("\n☁️  Step 2: CloudFront Deployment\n"));
+    const cloudFront = await deployToCloudFront(
+      config,
+      s3Stats,
+      cloudFrontOptions
+    );
 
     console.log();
-    console.log(chalk.green('✨ Deployment completed successfully!'));
+    console.log(chalk.green("✨ Deployment completed successfully!"));
 
     return {
       s3Stats,
@@ -331,15 +392,15 @@ export async function deployWithCloudFront(
   }
 
   console.log();
-  console.log(chalk.green('✨ S3 deployment completed!'));
+  console.log(chalk.green("✨ S3 deployment completed!"));
 
   // Return with empty CloudFront result if not enabled
   return {
     s3Stats,
     cloudFront: {
-      distributionId: '',
-      distributionDomain: '',
-      distributionUrl: '',
+      distributionId: "",
+      distributionDomain: "",
+      distributionUrl: "",
       isNewDistribution: false,
       deploymentTime: 0,
     },
