@@ -1,5 +1,5 @@
 {
-  "name": "scf",
+  "name": "scf-deploy",
   "version": "0.1.0",
   "description": "S3 + CloudFront static deployment automation CLI",
   "type": "module",

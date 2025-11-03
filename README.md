@@ -1,10 +1,10 @@
-# SCF - S3 + CloudFront Deployment CLI
+# scf-deploy - S3 + CloudFront Deployment CLI
 
 Automate static website deployment to AWS S3 and CloudFront with a simple CLI tool.
 
 ## Features
 
-- **Simple Deployment**: Deploy with a single command `npx scf deploy`
+- **Simple Deployment**: Deploy with a single command `npx scf-deploy deploy`
 - **TypeScript Configuration**: Type-safe config files with `scf.config.ts`
 - **Incremental Deployment**: Only upload changed files (SHA-256 hash comparison)
 - **CloudFront Integration**: Automatic cache invalidation after deployment
@@ -18,13 +18,13 @@ Automate static website deployment to AWS S3 and CloudFront with a simple CLI to
 ### Global Installation
 
 ```bash
-npm install -g scf
+npm install -g scf-deploy
 ```
 
-### Direct Execution with npx
+### Direct Execution with npx (Recommended)
 
 ```bash
-npx scf deploy
+npx scf-deploy deploy
 ```
 
 ## Quick Start
@@ -34,7 +34,7 @@ npx scf deploy
 Create `scf.config.ts` in your project root:
 
 ```typescript
-import { defineConfig } from 'scf';
+import { defineConfig } from 'scf-deploy';
 
 export default defineConfig({
   app: 'my-static-site',
@@ -67,7 +67,7 @@ npm run build
 ### 3. Deploy
 
 ```bash
-scf deploy
+npx scf-deploy deploy
 ```
 
 That's it! Your site is now live on S3 and CloudFront.
@@ -77,7 +77,7 @@ That's it! Your site is now live on S3 and CloudFront.
 ### Basic Configuration
 
 ```typescript
-import { defineConfig } from 'scf';
+import { defineConfig } from 'scf-deploy';
 
 export default defineConfig({
   app: 'my-app',           // Application name
@@ -159,22 +159,22 @@ Deploy your static site to S3 and CloudFront.
 
 ```bash
 # Basic deployment
-scf deploy
+scf-deploy deploy
 
 # Deploy to specific environment
-scf deploy --env prod
+scf-deploy deploy --env prod
 
 # Use specific AWS profile
-scf deploy --profile my-aws-profile
+scf-deploy deploy --profile my-aws-profile
 
 # Preview without uploading
-scf deploy --dry-run
+scf-deploy deploy --dry-run
 
 # Skip CloudFront (S3 only)
-scf deploy --no-cloudfront
+scf-deploy deploy --no-cloudfront
 
 # Force full deployment (ignore cached state)
-scf deploy --force
+scf-deploy deploy --force
 ```
 
 **Options:**
@@ -192,19 +192,19 @@ Remove deployed AWS resources.
 
 ```bash
 # Remove resources (with confirmation prompt)
-scf remove
+scf-deploy remove
 
 # Force remove without confirmation
-scf remove --force
+scf-deploy remove --force
 
 # Remove specific environment
-scf remove --env dev
+scf-deploy remove --env dev
 
 # Keep S3 bucket (only delete files)
-scf remove --keep-bucket
+scf-deploy remove --keep-bucket
 
 # Keep CloudFront distribution
-scf remove --keep-distribution
+scf-deploy remove --keep-distribution
 ```
 
 **Options:**
@@ -221,16 +221,16 @@ Check current deployment status.
 
 ```bash
 # Basic status
-scf status
+scf-deploy status
 
 # Specific environment
-scf status --env prod
+scf-deploy status --env prod
 
 # Detailed information
-scf status --detailed
+scf-deploy status --detailed
 
 # JSON output
-scf status --json
+scf-deploy status --json
 ```
 
 **Options:**
@@ -240,7 +240,7 @@ scf status --json
 
 ## AWS Credentials
 
-SCF looks for AWS credentials in the following order:
+scf-deploy looks for AWS credentials in the following order:
 
 1. **Command-line option**: `--profile` flag
 2. **Environment variables**: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`
@@ -250,7 +250,7 @@ SCF looks for AWS credentials in the following order:
 ### Using AWS Profile
 
 ```bash
-scf deploy --profile my-company-profile
+scf-deploy deploy --profile my-company-profile
 ```
 
 ### Using Environment Variables
@@ -258,14 +258,14 @@ scf deploy --profile my-company-profile
 ```bash
 export AWS_ACCESS_KEY_ID=your_access_key
 export AWS_SECRET_ACCESS_KEY=your_secret_key
-scf deploy
+scf-deploy deploy
 ```
 
 ## Features in Detail
 
 ### Incremental Deployment
 
-SCF uses SHA-256 hashing to detect file changes:
+scf-deploy uses SHA-256 hashing to detect file changes:
 
 - **First deployment**: All files are uploaded
 - **Subsequent deployments**: Only changed files are uploaded
@@ -275,7 +275,7 @@ State is stored in `.deploy/state.{env}.json` (add to `.gitignore`).
 
 ### CloudFront Cache Invalidation
 
-After deployment, SCF automatically:
+After deployment, scf-deploy automatically:
 
 1. Creates or updates CloudFront distribution
 2. Invalidates cache for changed files
@@ -287,9 +287,9 @@ After deployment, SCF automatically:
 Manage multiple environments with ease:
 
 ```bash
-scf deploy --env dev
-scf deploy --env staging
-scf deploy --env prod
+scf-deploy deploy --env dev
+scf-deploy deploy --env staging
+scf-deploy deploy --env prod
 ```
 
 Each environment:
@@ -315,7 +315,7 @@ Visual feedback during deployment:
 npm run build
 
 # Deploy to production
-scf deploy --env prod
+scf-deploy deploy --env prod
 ```
 
 Configuration:
@@ -342,7 +342,7 @@ export default defineConfig({
 npm run build
 
 # Deploy
-scf deploy
+scf-deploy deploy
 ```
 
 Configuration:
@@ -386,14 +386,14 @@ export default defineConfig({
 
 ```bash
 # Check if installed
-which scf
+which scf-deploy
 
 # Reinstall globally
-npm uninstall -g scf
-npm install -g scf
+npm uninstall -g scf-deploy
+npm install -g scf-deploy
 
-# Or use npx
-npx scf deploy
+# Or use npx (recommended)
+npx scf-deploy deploy
 ```
 
 ### AWS Credentials Error
@@ -403,7 +403,7 @@ npx scf deploy
 aws sts get-caller-identity
 
 # Use specific profile
-scf deploy --profile my-profile
+scf-deploy deploy --profile my-profile
 ```
 
 ### Config file not found
@@ -413,7 +413,7 @@ scf deploy --profile my-profile
 ls -la scf.config.ts
 
 # Specify custom path
-scf deploy --config ./config/scf.config.ts
+scf-deploy deploy --config ./config/scf.config.ts
 ```
 
 ### State file conflicts
@@ -423,7 +423,7 @@ scf deploy --config ./config/scf.config.ts
 ls -la .deploy/
 
 # Force full redeployment
-scf deploy --force
+scf-deploy deploy --force
 ```
 
 ## Requirements
@@ -487,7 +487,7 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 - **Homepage**: https://github.com/SCF-org
 - **Issues**: https://github.com/SCF-org/scf/issues
-- **NPM**: https://www.npmjs.com/package/scf
+- **NPM**: https://www.npmjs.com/package/scf-deploy
 
 ## Author
 
