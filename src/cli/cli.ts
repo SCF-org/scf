@@ -16,8 +16,7 @@ export function createProgram(): Command {
 
   program
     .name("scf-deploy")
-    .description("S3 + CloudFront static deployment automation CLI")
-    .version("0.1.0");
+    .description("S3 + CloudFront static deployment automation CLI");
 
   // Add commands
   program.addCommand(createInitCommand());
