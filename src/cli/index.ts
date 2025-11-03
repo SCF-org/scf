@@ -1,15 +1,9 @@
-import { Command } from 'commander';
+/**
+ * SCF CLI entry point
+ */
 
-const program = new Command();
+import { createProgram } from './cli.js';
 
-program
-  .name('scf')
-  .description('S3 + CloudFront static deployment automation CLI')
-  .version('0.1.0');
+const program = createProgram();
 
-// Commands will be added here
-// program.addCommand(deployCommand);
-// program.addCommand(removeCommand);
-// program.addCommand(statusCommand);
-
-program.parse();
+program.parse(process.argv);

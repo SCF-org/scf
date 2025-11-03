@@ -2,28 +2,30 @@
  * Config file loader using jiti for TypeScript runtime execution
  */
 
-import { createJiti } from 'jiti';
-import { existsSync } from 'node:fs';
-import { resolve, join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import type { SCFConfig } from '../../types/config.js';
+import jiti from "jiti";
+import { existsSync } from "node:fs";
+import { resolve, join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import type { SCFConfig } from "../../types/config.js";
 
 /**
  * Config file names to search for (in order of priority)
  */
 const CONFIG_FILE_NAMES = [
-  'scf.config.ts',
-  'scf.config.js',
-  'scf.config.mjs',
-  'scf.config.cjs',
+  "scf.config.ts",
+  "scf.config.js",
+  "scf.config.mjs",
+  "scf.config.cjs",
 ] as const;
 
 /**
  * Find config file in directory and parent directories
  */
-export function findConfigFile(startDir: string = process.cwd()): string | null {
+export function findConfigFile(
+  startDir: string = process.cwd()
+): string | null {
   let currentDir = resolve(startDir);
-  const root = resolve('/');
+  const root = resolve("/");
 
   while (currentDir !== root) {
     for (const fileName of CONFIG_FILE_NAMES) {
@@ -55,15 +57,14 @@ export async function loadConfigFile(configPath: string): Promise<SCFConfig> {
   try {
     // Create jiti instance for current file
     const currentFilePath = fileURLToPath(import.meta.url);
-    const jiti = createJiti(currentFilePath, {
+    const jitiInstance = jiti(currentFilePath, {
       interopDefault: true,
-      moduleCache: false,
       requireCache: false,
       esmResolve: true,
     });
 
     // Load the config file
-    const configModule = jiti(configPath) as
+    const configModule = jitiInstance(configPath) as
       | SCFConfig
       | { default: SCFConfig }
       | (() => SCFConfig)
@@ -72,17 +73,17 @@ export async function loadConfigFile(configPath: string): Promise<SCFConfig> {
     // Handle different export formats
     let config: SCFConfig;
 
-    if (typeof configModule === 'function') {
+    if (typeof configModule === "function") {
       // Config is a function
       config = configModule();
     } else if (
       configModule &&
-      typeof configModule === 'object' &&
-      'default' in configModule
+      typeof configModule === "object" &&
+      "default" in configModule
     ) {
       // Config has default export
       const defaultExport = configModule.default;
-      if (typeof defaultExport === 'function') {
+      if (typeof defaultExport === "function") {
         config = defaultExport();
       } else {
         config = defaultExport;
@@ -113,7 +114,9 @@ export async function discoverAndLoadConfig(
 
   if (!configPath) {
     throw new Error(
-      `Config file not found. Please create one of: ${CONFIG_FILE_NAMES.join(', ')}`
+      `Config file not found. Please create one of: ${CONFIG_FILE_NAMES.join(
+        ", "
+      )}`
     );
   }
 
