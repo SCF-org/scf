@@ -49,9 +49,14 @@ const AWS_REGIONS = [
 function generateConfigContent(answers: InitAnswers): string {
   const { app, region, bucketName, buildDir, enableCloudFront } = answers;
 
-  return `import { defineConfig } from 'scf-deploy';
-
-export default defineConfig({
+  return `/**
+ * SCF Deploy Configuration
+ *
+ * For TypeScript support, you can use:
+ * import { defineConfig } from 'scf-deploy';
+ * export default defineConfig({ ... });
+ */
+const config = {
   app: '${app}',
   region: '${region}',
 
@@ -81,7 +86,9 @@ export default defineConfig({
       cloudfront: { priceClass: 'PriceClass_All' },
     },
   },
-});
+};
+
+export default config;
 `;
 }
 

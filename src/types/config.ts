@@ -3,6 +3,27 @@
  */
 
 /**
+ * Environment-specific configuration override
+ * Allows partial overrides of nested configurations
+ */
+export interface EnvironmentConfig {
+  /** Application name override */
+  app?: string;
+
+  /** AWS region override */
+  region?: string;
+
+  /** AWS credentials override */
+  credentials?: Partial<AWSCredentialsConfig>;
+
+  /** S3 bucket configuration override */
+  s3?: Partial<S3Config>;
+
+  /** CloudFront distribution configuration override */
+  cloudfront?: Partial<CloudFrontConfig>;
+}
+
+/**
  * Main SCF configuration interface
  */
 export interface SCFConfig {
@@ -22,7 +43,7 @@ export interface SCFConfig {
   cloudfront?: CloudFrontConfig;
 
   /** Environment-specific configurations */
-  environments?: Record<string, Partial<SCFConfig>>;
+  environments?: Record<string, EnvironmentConfig>;
 }
 
 /**

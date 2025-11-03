@@ -43,7 +43,7 @@ export function createRemoveCommand(): Command {
 
   command
     .description('Remove deployed resources (S3 bucket, CloudFront distribution)')
-    .option('-e, --env <environment>', 'Environment name', 'default')
+    .option('-e, --env <environment>', 'Environment name')
     .option('-c, --config <path>', 'Config file path', 'scf.config.ts')
     .option('-p, --profile <profile>', 'AWS profile name')
     .option('-f, --force', 'Skip confirmation prompt')
@@ -67,7 +67,7 @@ export function createRemoveCommand(): Command {
  */
 async function removeCommand(options: RemoveOptions): Promise<void> {
   const {
-    env = 'default',
+    env,
     config: configPath = 'scf.config.ts',
     profile,
     force = false,

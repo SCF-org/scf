@@ -31,7 +31,7 @@ export function createDeployCommand(): Command {
 
   command
     .description('Deploy static site to S3 and CloudFront')
-    .option('-e, --env <environment>', 'Environment name (dev, prod, etc.)', 'default')
+    .option('-e, --env <environment>', 'Environment name (dev, prod, etc.)')
     .option('-c, --config <path>', 'Config file path', 'scf.config.ts')
     .option('-p, --profile <profile>', 'AWS profile name')
     .option('--dry-run', 'Preview deployment without uploading')
@@ -56,7 +56,7 @@ export function createDeployCommand(): Command {
  */
 async function deployCommand(options: DeployOptions): Promise<void> {
   const {
-    env = 'default',
+    env,
     config: configPath = 'scf.config.ts',
     profile,
     dryRun = false,
@@ -86,7 +86,7 @@ async function deployCommand(options: DeployOptions): Promise<void> {
   }
 
   logger.success(`Configuration loaded: ${chalk.cyan(config.app)}`);
-  logger.keyValue('Environment', env);
+  logger.keyValue('Environment', env || 'base config');
   logger.keyValue('Region', config.region);
 
   if (dryRun) {

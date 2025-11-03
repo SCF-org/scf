@@ -55,16 +55,21 @@ export async function loadConfigFile(configPath: string): Promise<SCFConfig> {
   }
 
   try {
-    // Create jiti instance for current file
-    const currentFilePath = fileURLToPath(import.meta.url);
-    const jitiInstance = jiti(currentFilePath, {
+    // Get the absolute path of the current file for jiti
+    const currentFile = fileURLToPath(import.meta.url);
+
+    // Create jiti instance
+    // The first argument must be an absolute file path (not a directory)
+    const jitiInstance = jiti(currentFile, {
       interopDefault: true,
       requireCache: false,
       esmResolve: true,
+      moduleCache: false
     });
 
-    // Load the config file
-    const configModule = jitiInstance(configPath) as
+    // Load the config file (must use absolute path)
+    const absoluteConfigPath = resolve(configPath);
+    const configModule = jitiInstance(absoluteConfigPath) as
       | SCFConfig
       | { default: SCFConfig }
       | (() => SCFConfig)

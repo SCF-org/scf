@@ -29,7 +29,7 @@ export function createStatusCommand(): Command {
 
   command
     .description('Show deployment status')
-    .option('-e, --env <environment>', 'Environment name', 'default')
+    .option('-e, --env <environment>', 'Environment name')
     .option('-d, --detailed', 'Show detailed information')
     .option('--json', 'Output as JSON')
     .action(async (options: StatusOptions) => {
@@ -49,7 +49,7 @@ export function createStatusCommand(): Command {
  * Status command handler
  */
 async function statusCommand(options: StatusOptions): Promise<void> {
-  const { env = 'default', detailed = false, json = false } = options;
+  const { env, detailed = false, json = false } = options;
 
   // Load state
   const state = loadState({ environment: env });
