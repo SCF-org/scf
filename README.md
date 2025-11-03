@@ -7,13 +7,17 @@ Automate static website deployment to AWS S3 and CloudFront with a simple CLI to
 - **Easy Setup**: Interactive `init` command with helpful post-install message
 - **Simple Deployment**: Deploy with a single command `npx scf-deploy deploy`
 - **TypeScript Configuration**: Type-safe config files with `scf.config.ts`
+- **Auto Build Detection**: Automatically finds your build directory (dist, build, out, etc.)
+- **Build Validation**: Ensures deployable files exist before creating AWS resources
 - **Multiple Templates**: Pre-configured templates for React, Vue, Next.js
 - **Incremental Deployment**: Only upload changed files (SHA-256 hash comparison)
 - **CloudFront Integration**: Automatic cache invalidation after deployment
 - **Multi-Environment Support**: Manage dev, staging, and prod environments
 - **AWS Credentials Integration**: Supports AWS profiles, environment variables, and IAM roles
-- **State Management**: Track deployed resources locally
+- **State Management**: Track deployed resources locally with automatic .gitignore handling
+- **State Recovery**: Recover lost state files from AWS resource tags
 - **Progress Tracking**: Real-time upload progress with visual feedback
+- **SSR Detection**: Prevents accidental deployment of SSR builds (.next, .nuxt)
 
 ## Installation
 
@@ -48,24 +52,25 @@ npx scf-deploy init --yes
 Or manually create `scf.config.ts` in your project root:
 
 ```typescript
-import { defineConfig } from 'scf-deploy';
-
-export default defineConfig({
+const config = {
   app: 'my-static-site',
   region: 'ap-northeast-2',
 
   s3: {
     bucketName: 'my-site-bucket',
-    buildDir: './dist',
+    // buildDir is auto-detected (dist, build, out, etc.)
+    // You can override: buildDir: './custom-dir',
     indexDocument: 'index.html',
     errorDocument: '404.html',
   },
 
   cloudfront: {
     enabled: true,
-    priceClass: 'PriceClass_100',
+    // priceClass: 'PriceClass_100', // Optional, defaults to PriceClass_100
   },
-});
+};
+
+export default config;
 ```
 
 ### 2. Build Your Site
@@ -91,36 +96,67 @@ That's it! Your site is now live on S3 and CloudFront.
 ### Basic Configuration
 
 ```typescript
-import { defineConfig } from 'scf-deploy';
-
-export default defineConfig({
+const config = {
   app: 'my-app',           // Application name
   region: 'us-east-1',     // AWS region
 
   s3: {
     bucketName: 'my-bucket',
-    buildDir: './dist',
+    // buildDir is optional - auto-detected from: dist, build, out, .output/public, _site
     indexDocument: 'index.html',
     errorDocument: '404.html',
   },
 
   cloudfront: {
     enabled: true,
-    priceClass: 'PriceClass_100',  // PriceClass_100, PriceClass_200, PriceClass_All
+    // priceClass: 'PriceClass_100',  // Optional: PriceClass_100, PriceClass_200, PriceClass_All
   },
-});
+};
+
+export default config;
+```
+
+### Build Directory Auto-Detection
+
+scf-deploy automatically detects your build directory by searching for:
+
+- `dist` - Vite, Rollup, Vue, etc.
+- `build` - Create React App, Next.js, etc.
+- `out` - Next.js static export
+- `.output/public` - Nuxt 3
+- `_site` - Jekyll, 11ty
+- `output` - Some SSGs
+
+**Requirements:**
+- Directory must contain `index.html` as the entry point
+- Must have deployable web files (.html, .js, .css, etc.)
+
+**SSR Build Detection:**
+scf-deploy will reject SSR build directories that require a server:
+- `.next` - Next.js SSR build
+- `.nuxt` - Nuxt SSR build
+
+For Next.js, use `next export` to generate static files in `./out`:
+```bash
+# next.config.js
+module.exports = {
+  output: 'export',
+};
+
+# Then build
+npm run build
+# Creates ./out directory with static files
 ```
 
 ### Environment-Specific Configuration
 
 ```typescript
-export default defineConfig({
+const config = {
   app: 'my-app',
   region: 'ap-northeast-2',
 
   s3: {
     bucketName: 'my-site-prod',
-    buildDir: './dist',
   },
 
   cloudfront: {
@@ -137,22 +173,23 @@ export default defineConfig({
       s3: { bucketName: 'my-site-staging' },
     },
     prod: {
-      cloudfront: { priceClass: 'PriceClass_All' },
+      cloudfront: { priceClass: 'PriceClass_All' },  // Use all edge locations in prod
     },
   },
-});
+};
+
+export default config;
 ```
 
 ### Custom Domain Configuration
 
 ```typescript
-export default defineConfig({
+const config = {
   app: 'my-app',
   region: 'us-east-1',
 
   s3: {
     bucketName: 'my-site',
-    buildDir: './dist',
   },
 
   cloudfront: {
@@ -162,7 +199,9 @@ export default defineConfig({
       certificateArn: 'arn:aws:acm:us-east-1:123456789012:certificate/abc-def',
     },
   },
-});
+};
+
+export default config;
 ```
 
 ## Commands
@@ -281,6 +320,40 @@ scf-deploy status --json
 - `-d, --detailed` - Show detailed information
 - `--json` - Output as JSON
 
+### recover
+
+Recover lost deployment state from AWS resources.
+
+If you accidentally delete the `.deploy/state.json` file, you can recover it from AWS resource tags.
+
+```bash
+# Recover state for default environment
+scf-deploy recover
+
+# Recover specific environment
+scf-deploy recover --env prod
+
+# Overwrite existing state file
+scf-deploy recover --force
+```
+
+**How it works:**
+1. Searches for S3 buckets with `scf:managed=true` tag
+2. Finds associated CloudFront distributions
+3. Filters by app name and environment
+4. Reconstructs the state file from AWS resources
+
+**Options:**
+- `-e, --env <environment>` - Environment name to recover
+- `-c, --config <path>` - Config file path (default: "scf.config.ts")
+- `-p, --profile <profile>` - AWS profile name
+- `-f, --force` - Overwrite existing state file
+
+**Note:** All AWS resources created by scf-deploy are automatically tagged for recovery:
+- `scf:managed=true` - Indicates resource is managed by scf-deploy
+- `scf:app=<app-name>` - Application name from config
+- `scf:environment=<env>` - Environment name
+
 ## AWS Credentials
 
 scf-deploy looks for AWS credentials in the following order:
@@ -306,6 +379,52 @@ scf-deploy deploy
 
 ## Features in Detail
 
+### Build Validation
+
+Before creating any AWS resources, scf-deploy validates your build:
+
+- **Auto-detection**: Searches for common build directories (dist, build, out, etc.)
+- **index.html check**: Ensures an entry point exists
+- **Deployable files**: Verifies web files (.html, .js, .css, etc.) are present
+- **SSR rejection**: Prevents deployment of SSR builds that require a server
+
+This prevents wasted time and costs by catching issues before AWS resources are created.
+
+### Automatic .gitignore Management
+
+scf-deploy automatically manages your `.gitignore` file:
+
+- **Auto-detection**: Checks if your project is a Git repository
+- **Safe addition**: Adds `.deploy/` if not already present
+- **Non-intrusive**: Creates `.gitignore` if it doesn't exist
+- **One-time**: Only modifies once, won't duplicate entries
+
+This happens automatically during:
+- `scf-deploy init` - When initializing configuration
+- `scf-deploy deploy` - After first successful deployment
+
+### State Recovery
+
+If you accidentally delete `.deploy/state.json`, you can recover it:
+
+```bash
+scf-deploy recover --env prod
+```
+
+**How it works:**
+- All AWS resources are tagged with `scf:managed`, `scf:app`, `scf:environment`
+- `recover` command searches for these tagged resources
+- State file is reconstructed from AWS metadata
+- You can continue deploying without recreating resources
+
+**What can be recovered:**
+- S3 bucket information
+- CloudFront distribution ID and domain
+- Resource creation timestamps
+- Environment configuration
+
+**Note:** File hashes are not recoverable, so the next deployment will re-upload all files.
+
 ### Incremental Deployment
 
 scf-deploy uses SHA-256 hashing to detect file changes:
@@ -314,7 +433,7 @@ scf-deploy uses SHA-256 hashing to detect file changes:
 - **Subsequent deployments**: Only changed files are uploaded
 - **Time savings**: 80-95% faster deployment times
 
-State is stored in `.deploy/state.{env}.json` (add to `.gitignore`).
+State is stored in `.deploy/state.{env}.json` (automatically added to `.gitignore`).
 
 ### CloudFront Cache Invalidation
 
@@ -364,18 +483,20 @@ scf-deploy deploy --env prod
 Configuration:
 
 ```typescript
-export default defineConfig({
+const config = {
   app: 'my-react-app',
   region: 'us-east-1',
   s3: {
     bucketName: 'my-react-app',
-    buildDir: './build',  // React default
+    // buildDir auto-detected (React uses ./build by default)
     indexDocument: 'index.html',
   },
   cloudfront: {
     enabled: true,
   },
-});
+};
+
+export default config;
 ```
 
 ### Vue Application
@@ -391,28 +512,31 @@ scf-deploy deploy
 Configuration:
 
 ```typescript
-export default defineConfig({
+const config = {
   app: 'my-vue-app',
   region: 'eu-west-1',
   s3: {
     bucketName: 'my-vue-app',
-    buildDir: './dist',  // Vue default
+    // buildDir auto-detected (Vue uses ./dist by default)
     indexDocument: 'index.html',
   },
   cloudfront: {
     enabled: true,
   },
-});
+};
+
+export default config;
 ```
 
 ### Static HTML Site
 
 ```typescript
-export default defineConfig({
+const config = {
   app: 'my-website',
   region: 'ap-northeast-2',
   s3: {
     bucketName: 'my-website',
+    // For custom build directory (not auto-detected)
     buildDir: './public',
     indexDocument: 'index.html',
     errorDocument: '404.html',
@@ -420,7 +544,9 @@ export default defineConfig({
   cloudfront: {
     enabled: true,
   },
-});
+};
+
+export default config;
 ```
 
 ## Troubleshooting
@@ -469,6 +595,49 @@ ls -la .deploy/
 scf-deploy deploy --force
 ```
 
+### Build directory not found
+
+```bash
+# Error: Could not find build directory
+# Solution: Ensure you've built your project first
+npm run build
+
+# Or specify a custom build directory
+# In scf.config.ts:
+s3: {
+  bucketName: 'my-bucket',
+  buildDir: './my-custom-output',
+}
+```
+
+### SSR build detected error
+
+```bash
+# Error: Cannot deploy SSR build directory (.next, .nuxt)
+# For Next.js: Enable static export
+# next.config.js:
+module.exports = {
+  output: 'export',  // Generates static files in ./out
+};
+
+# For Nuxt: Use static generation
+# nuxt.config.js:
+export default {
+  ssr: false,  // SPA mode
+  target: 'static',
+};
+```
+
+### Lost state file recovery
+
+```bash
+# If you accidentally deleted .deploy/state.json
+scf-deploy recover --env prod
+
+# Then continue deploying as normal
+scf-deploy deploy --env prod
+```
+
 ## Requirements
 
 - **Node.js**: >= 18.0.0
@@ -491,11 +660,17 @@ scf-deploy deploy --force
         "s3:GetObject",
         "s3:DeleteObject",
         "s3:PutBucketWebsite",
+        "s3:PutBucketTagging",
+        "s3:GetBucketTagging",
+        "s3:ListAllMyBuckets",
         "cloudfront:CreateDistribution",
         "cloudfront:GetDistribution",
         "cloudfront:UpdateDistribution",
         "cloudfront:DeleteDistribution",
-        "cloudfront:CreateInvalidation"
+        "cloudfront:CreateInvalidation",
+        "cloudfront:ListDistributions",
+        "cloudfront:TagResource",
+        "cloudfront:ListTagsForResource"
       ],
       "Resource": "*"
     }
@@ -503,14 +678,65 @@ scf-deploy deploy --force
 }
 ```
 
+**Note:** Tagging permissions are required for the state recovery feature.
+
 ## Best Practices
 
-1. **Add `.deploy/` to `.gitignore`**: Don't commit state files
-2. **Use environment-specific configs**: Separate dev/staging/prod
-3. **Test with `--dry-run` first**: Preview changes before deploying
-4. **Use IAM roles in CI/CD**: Don't hardcode credentials
-5. **Enable CloudFront in production**: Better performance and HTTPS
-6. **Set up custom domain with ACM certificate**: Professional appearance
+1. **Build before deploying**: Always run your build command before deployment
+   ```bash
+   npm run build && npx scf-deploy deploy
+   ```
+
+2. **State file management**:
+   - `.deploy/` is automatically added to `.gitignore`
+   - Never commit state files to Git
+   - Use `scf-deploy recover` if state is lost
+
+3. **Use environment-specific configs**: Separate dev/staging/prod
+   ```bash
+   scf-deploy deploy --env dev    # For development
+   scf-deploy deploy --env prod   # For production
+   ```
+
+4. **Test with `--dry-run` first**: Preview changes before deploying
+   ```bash
+   scf-deploy deploy --dry-run
+   ```
+
+5. **Use IAM roles in CI/CD**: Don't hardcode credentials
+   - Prefer IAM roles over access keys
+   - Use AWS profiles locally
+   - Let EC2/ECS IAM roles work automatically
+
+6. **Enable CloudFront in production**: Better performance and HTTPS
+   - Disable CloudFront in dev to save costs
+   - Use `PriceClass_100` for cost optimization
+   - Upgrade to `PriceClass_All` for global coverage
+
+7. **Set up custom domain with ACM certificate**: Professional appearance
+   - Request ACM certificate in `us-east-1` for CloudFront
+   - Verify domain ownership
+   - Add domain to CloudFront config
+
+8. **Static export for Next.js**: Use `output: 'export'`
+   ```javascript
+   // next.config.js
+   module.exports = {
+     output: 'export',
+   };
+   ```
+
+9. **Monitor AWS costs**:
+   - Check S3 storage and transfer costs
+   - Monitor CloudFront data transfer
+   - Use CloudWatch for usage metrics
+
+10. **Keep your CLI updated**:
+    ```bash
+    npm update -g scf-deploy
+    # Or with npx (always uses latest)
+    npx scf-deploy@latest deploy
+    ```
 
 ## Contributing
 
