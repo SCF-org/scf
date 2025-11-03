@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "S3 + CloudFront static deployment automation CLI",
   "type": "module",
-  "author": "",
+  "author": "jeonghodong <fire13764@gmail.com>",
   "license": "MIT",
   "keywords": [
     "aws",
@@ -11,8 +11,19 @@
     "cloudfront",
     "deployment",
     "cli",
-    "static-site"
+    "static-site",
+    "cdn",
+    "aws-deployment",
+    "static-hosting"
   ],
+  "homepage": "https://github.com/SCF-org",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SCF-org/scf"
+  },
+  "bugs": {
+    "url": "https://github.com/SCF-org/scf/issues"
+  },
   "bin": {
     "scf": "./dist/bin/cli.js"
   },

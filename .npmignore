@@ -1,0 +1,56 @@
+# Source files
+src/
+*.ts
+!*.d.ts
+
+# Tests
+test/
+tests/
+*.test.js
+*.spec.js
+__tests__/
+
+# Development files
+.vscode/
+.idea/
+*.log
+.DS_Store
+
+# Config files
+tsconfig.json
+tsup.config.ts
+.eslintrc
+.eslintrc.*
+.prettierrc
+.prettierrc.*
+eslint.config.js
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Documentation source
+docs/
+*.md
+!README.md
+
+# Examples (optional - uncomment if you don't want to include examples)
+# examples/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# State files
+.deploy/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build artifacts
+*.tsbuildinfo
