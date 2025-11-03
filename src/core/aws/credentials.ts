@@ -7,13 +7,13 @@ import {
   fromIni,
   fromInstanceMetadata,
   fromContainerMetadata,
-} from '@aws-sdk/credential-providers';
-import type { AwsCredentialIdentityProvider } from '@aws-sdk/types';
-import type { SCFConfig } from '../../types/config.js';
+} from "@aws-sdk/credential-providers";
+import type { AwsCredentialIdentityProvider } from "@aws-sdk/types";
+import type { SCFConfig } from "../../types/config.js";
 import type {
   CredentialSource,
   CredentialResolution,
-} from '../../types/aws.js';
+} from "../../types/aws.js";
 
 /**
  * Get AWS credentials from config with priority order:
@@ -30,48 +30,43 @@ export async function getCredentials(
   let profile: string | undefined;
 
   // Priority 1: Explicit credentials in config
-  if (
-    config.credentials?.accessKeyId &&
-    config.credentials?.secretAccessKey
-  ) {
+  if (config.credentials?.accessKeyId && config.credentials?.secretAccessKey) {
+    const { accessKeyId, secretAccessKey, sessionToken } = config.credentials;
     credentialProvider = async () => ({
-      accessKeyId: config.credentials!.accessKeyId!,
-      secretAccessKey: config.credentials!.secretAccessKey!,
-      sessionToken: config.credentials?.sessionToken,
+      accessKeyId,
+      secretAccessKey,
+      sessionToken,
     });
-    source = 'config';
+    source = "config";
   }
   // Priority 2: Profile from config
   else if (config.credentials?.profile) {
     profile = config.credentials.profile;
     credentialProvider = fromIni({ profile });
-    source = 'profile';
+    source = "profile";
   }
   // Priority 3: Environment variables
-  else if (
-    process.env.AWS_ACCESS_KEY_ID &&
-    process.env.AWS_SECRET_ACCESS_KEY
-  ) {
+  else if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
     credentialProvider = fromEnv();
-    source = 'environment';
+    source = "environment";
   }
   // Priority 4: Default credential chain
   else {
     // Try profile first (default or AWS_PROFILE env)
-    const defaultProfile = process.env.AWS_PROFILE || 'default';
+    const defaultProfile = process.env.AWS_PROFILE || "default";
 
     try {
       credentialProvider = fromIni({ profile: defaultProfile });
-      source = 'profile';
+      source = "profile";
       profile = defaultProfile;
     } catch {
       // Fall back to instance/container metadata (IAM role)
       try {
         credentialProvider = fromContainerMetadata();
-        source = 'instance-metadata';
+        source = "instance-metadata";
       } catch {
         credentialProvider = fromInstanceMetadata();
-        source = 'instance-metadata';
+        source = "instance-metadata";
       }
     }
   }
@@ -93,7 +88,9 @@ export async function getCredentials(
         `  3. Environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)\n` +
         `  4. AWS profile (~/.aws/credentials)\n` +
         `  5. IAM role (EC2/ECS instance metadata)\n\n` +
-        `Original error: ${error instanceof Error ? error.message : String(error)}`
+        `Original error: ${
+          error instanceof Error ? error.message : String(error)
+        }`
     );
   }
 }

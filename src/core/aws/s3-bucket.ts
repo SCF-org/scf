@@ -22,8 +22,17 @@ export async function bucketExists(
   try {
     await client.send(new HeadBucketCommand({ Bucket: bucketName }));
     return true;
-  } catch (error: any) {
-    if (error.name === 'NotFound' || error.$metadata?.httpStatusCode === 404) {
+  } catch (error: unknown) {
+    if (
+      error &&
+      typeof error === 'object' &&
+      ('name' in error && error.name === 'NotFound' ||
+       '$metadata' in error &&
+       typeof error.$metadata === 'object' &&
+       error.$metadata !== null &&
+       'httpStatusCode' in error.$metadata &&
+       error.$metadata.httpStatusCode === 404)
+    ) {
       return false;
     }
     throw error;
@@ -50,8 +59,13 @@ export async function createBucket(
     });
 
     await client.send(command);
-  } catch (error: any) {
-    if (error.name === 'BucketAlreadyOwnedByYou') {
+  } catch (error: unknown) {
+    if (
+      error &&
+      typeof error === 'object' &&
+      'name' in error &&
+      error.name === 'BucketAlreadyOwnedByYou'
+    ) {
       // Bucket already exists and owned by us, continue
       return;
     }
@@ -99,7 +113,7 @@ export async function setBucketPublicReadPolicy(
         Bucket: bucketName,
       })
     );
-  } catch (error) {
+  } catch (_error) {
     // Ignore if doesn't exist
   }
 

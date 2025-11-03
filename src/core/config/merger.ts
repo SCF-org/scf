@@ -7,7 +7,7 @@ import type { SCFConfig } from '../../types/config.js';
 /**
  * Deep merge two objects
  */
-function deepMerge<T extends Record<string, any>>(
+function deepMerge<T extends Record<string, unknown>>(
   target: T,
   source: Partial<T>
 ): T {
@@ -29,8 +29,8 @@ function deepMerge<T extends Record<string, any>>(
     ) {
       // Both are objects, merge recursively
       result[key] = deepMerge(
-        targetValue as Record<string, any>,
-        sourceValue as Record<string, any>
+        targetValue as Record<string, unknown>,
+        sourceValue as Record<string, unknown>
       ) as T[Extract<keyof T, string>];
     } else if (sourceValue !== undefined) {
       // Override with source value
@@ -51,7 +51,7 @@ export function mergeEnvironment(
   // If no environment specified, return base config
   if (!environment || !baseConfig.environments) {
     // Remove environments field from returned config
-    const { environments, ...configWithoutEnv } = baseConfig;
+    const { environments: _environments, ...configWithoutEnv } = baseConfig;
     return configWithoutEnv;
   }
 
@@ -65,7 +65,7 @@ export function mergeEnvironment(
   }
 
   // Remove environments field and merge with env-specific config
-  const { environments, ...baseWithoutEnv } = baseConfig;
+  const { environments: _environments, ...baseWithoutEnv } = baseConfig;
 
   // Merge base config with environment config
   const merged = deepMerge(baseWithoutEnv, envConfig);

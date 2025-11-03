@@ -2,7 +2,7 @@
  * AWS-related type definitions
  */
 
-import type { AwsCredentialIdentity } from '@aws-sdk/types';
+import type { AwsCredentialIdentity } from "@aws-sdk/types";
 
 /**
  * AWS credentials (from AWS SDK)
@@ -27,11 +27,11 @@ export interface AWSAccountInfo {
  * Credential source type
  */
 export type CredentialSource =
-  | 'config'
-  | 'environment'
-  | 'profile'
-  | 'instance-metadata'
-  | 'default-chain';
+  | "config"
+  | "environment"
+  | "profile"
+  | "instance-metadata"
+  | "default-chain";
 
 /**
  * Credential resolution result

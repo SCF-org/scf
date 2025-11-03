@@ -68,8 +68,17 @@ export async function getInvalidation(
     );
 
     return response.Invalidation || null;
-  } catch (error: any) {
-    if (error.name === 'NoSuchInvalidation' || error.$metadata?.httpStatusCode === 404) {
+  } catch (error: unknown) {
+    if (
+      error &&
+      typeof error === 'object' &&
+      ('name' in error && error.name === 'NoSuchInvalidation' ||
+       '$metadata' in error &&
+       typeof error.$metadata === 'object' &&
+       error.$metadata !== null &&
+       'httpStatusCode' in error.$metadata &&
+       error.$metadata.httpStatusCode === 404)
+    ) {
       return null;
     }
     throw error;

@@ -2,7 +2,8 @@
  * Zod schemas for SCF configuration validation
  */
 
-import { z } from 'zod';
+import { z } from "zod";
+import type { SCFConfig } from "../../types/config.js";
 
 /**
  * AWS credentials schema
@@ -23,14 +24,14 @@ const s3ConfigSchema = z
   .object({
     bucketName: z
       .string()
-      .min(3, 'Bucket name must be at least 3 characters')
-      .max(63, 'Bucket name must be at most 63 characters')
+      .min(3, "Bucket name must be at least 3 characters")
+      .max(63, "Bucket name must be at most 63 characters")
       .regex(
         /^[a-z0-9][a-z0-9.-]*[a-z0-9]$/,
-        'Bucket name must follow S3 naming rules'
+        "Bucket name must follow S3 naming rules"
       ),
-    buildDir: z.string().min(1, 'Build directory is required'),
-    indexDocument: z.string().default('index.html'),
+    buildDir: z.string().min(1, "Build directory is required"),
+    indexDocument: z.string().default("index.html"),
     errorDocument: z.string().optional(),
     websiteHosting: z.boolean().default(true),
     concurrency: z.number().int().min(1).max(100).default(10),
@@ -56,14 +57,14 @@ const cloudfrontConfigSchema = z
   .object({
     enabled: z.boolean(),
     priceClass: z
-      .enum(['PriceClass_100', 'PriceClass_200', 'PriceClass_All'])
-      .default('PriceClass_100'),
+      .enum(["PriceClass_100", "PriceClass_200", "PriceClass_All"])
+      .default("PriceClass_100"),
     customDomain: z
       .object({
-        domainName: z.string().min(1, 'Domain name is required'),
+        domainName: z.string().min(1, "Domain name is required"),
         certificateArn: z
           .string()
-          .regex(/^arn:aws:acm:/, 'Must be a valid ACM certificate ARN'),
+          .regex(/^arn:aws:acm:/, "Must be a valid ACM certificate ARN"),
         aliases: z.array(z.string()).optional(),
       })
       .optional(),
@@ -78,20 +79,20 @@ const cloudfrontConfigSchema = z
 /**
  * Main SCF configuration schema
  */
-export const configSchema: z.ZodType<any> = z.object({
+export const configSchema: z.ZodType<SCFConfig> = z.object({
   app: z
     .string()
-    .min(1, 'App name is required')
+    .min(1, "App name is required")
     .regex(
       /^[a-z0-9-]+$/,
-      'App name must contain only lowercase letters, numbers, and hyphens'
+      "App name must contain only lowercase letters, numbers, and hyphens"
     ),
   region: z
     .string()
-    .min(1, 'AWS region is required')
+    .min(1, "AWS region is required")
     .regex(
       /^[a-z]{2}-[a-z]+-\d+$/,
-      'Must be a valid AWS region (e.g., us-east-1)'
+      "Must be a valid AWS region (e.g., us-east-1)"
     ),
   credentials: awsCredentialsSchema,
   s3: s3ConfigSchema,

@@ -2,7 +2,7 @@
  * S3 file uploader
  */
 
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, type PutObjectCommandInput } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import { createReadStream, readFileSync } from 'node:fs';
 import { gzip } from 'node:zlib';
@@ -45,7 +45,7 @@ export async function uploadFile(
     }
 
     // Prepare upload parameters
-    const params: any = {
+    const params: PutObjectCommandInput = {
       Bucket: bucketName,
       Key: file.key,
       ContentType: file.contentType,

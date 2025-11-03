@@ -48,8 +48,17 @@ export async function distributionExists(
       })
     );
     return true;
-  } catch (error: any) {
-    if (error.name === 'NoSuchDistribution' || error.$metadata?.httpStatusCode === 404) {
+  } catch (error: unknown) {
+    if (
+      error &&
+      typeof error === 'object' &&
+      ('name' in error && error.name === 'NoSuchDistribution' ||
+       '$metadata' in error &&
+       typeof error.$metadata === 'object' &&
+       error.$metadata !== null &&
+       'httpStatusCode' in error.$metadata &&
+       error.$metadata.httpStatusCode === 404)
+    ) {
       return false;
     }
     throw error;
@@ -70,8 +79,17 @@ export async function getDistribution(
       })
     );
     return response.Distribution || null;
-  } catch (error: any) {
-    if (error.name === 'NoSuchDistribution' || error.$metadata?.httpStatusCode === 404) {
+  } catch (error: unknown) {
+    if (
+      error &&
+      typeof error === 'object' &&
+      ('name' in error && error.name === 'NoSuchDistribution' ||
+       '$metadata' in error &&
+       typeof error.$metadata === 'object' &&
+       error.$metadata !== null &&
+       'httpStatusCode' in error.$metadata &&
+       error.$metadata.httpStatusCode === 404)
+    ) {
       return null;
     }
     throw error;
@@ -225,16 +243,20 @@ export async function updateDistribution(
     currentConfig.PriceClass = updates.priceClass;
   }
 
+  if (!currentConfig.DefaultCacheBehavior) {
+    throw new Error('Distribution configuration missing DefaultCacheBehavior');
+  }
+
   if (updates.defaultTTL !== undefined) {
-    currentConfig.DefaultCacheBehavior!.DefaultTTL = updates.defaultTTL;
+    currentConfig.DefaultCacheBehavior.DefaultTTL = updates.defaultTTL;
   }
 
   if (updates.maxTTL !== undefined) {
-    currentConfig.DefaultCacheBehavior!.MaxTTL = updates.maxTTL;
+    currentConfig.DefaultCacheBehavior.MaxTTL = updates.maxTTL;
   }
 
   if (updates.minTTL !== undefined) {
-    currentConfig.DefaultCacheBehavior!.MinTTL = updates.minTTL;
+    currentConfig.DefaultCacheBehavior.MinTTL = updates.minTTL;
   }
 
   if (updates.ipv6 !== undefined) {

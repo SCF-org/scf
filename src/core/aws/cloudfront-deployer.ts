@@ -5,7 +5,7 @@
 import chalk from 'chalk';
 import ora, { type Ora } from 'ora';
 import type { SCFConfig } from '../../types/config.js';
-import type { DeploymentStats } from '../../types/deployer.js';
+import type { DeploymentStats, UploadOptions } from '../../types/deployer.js';
 import { createCloudFrontClient } from './client.js';
 import {
   distributionExists,
@@ -156,7 +156,10 @@ export async function deployToCloudFront(
     };
 
     distribution = await createDistribution(cfClient, createOptions);
-    distributionId = distribution.Id!;
+    if (!distribution.Id) {
+      throw new Error('Failed to create CloudFront distribution: No ID returned');
+    }
+    distributionId = distribution.Id;
     isNewDistribution = true;
 
     if (spinner) {
@@ -182,7 +185,7 @@ export async function deployToCloudFront(
       if (spinner) {
         spinner.succeed('Distribution deployed');
       }
-    } catch (error: any) {
+    } catch (_error: unknown) {
       if (spinner) {
         spinner.warn('Distribution deployment is taking longer than expected');
       }
@@ -296,9 +299,9 @@ export async function deployToCloudFront(
  */
 export async function deployWithCloudFront(
   config: SCFConfig,
-  deployToS3: (config: SCFConfig, options?: any) => Promise<DeploymentStats>,
+  deployToS3: (config: SCFConfig, options?: UploadOptions) => Promise<DeploymentStats>,
   options: {
-    s3Options?: any;
+    s3Options?: UploadOptions;
     cloudFrontOptions?: CloudFrontDeploymentOptions;
   } = {}
 ): Promise<{
