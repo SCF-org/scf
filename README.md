@@ -1,30 +1,79 @@
 # scf-deploy - S3 + CloudFront Deployment CLI
 
-Automate static website deployment to AWS S3 and CloudFront with a simple CLI tool.
+[![npm version](https://img.shields.io/npm/v/scf-deploy.svg)](https://www.npmjs.com/package/scf-deploy)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node Version](https://img.shields.io/node/v/scf-deploy.svg)](https://nodejs.org)
+
+Automate static website deployment to AWS S3 and CloudFront with a simple, powerful CLI tool.
+
+**Current Version:** 0.4.1
+
+## Table of Contents
+
+- [Features](#features)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Configuration](#configuration)
+- [Commands](#commands)
+  - [init](#init)
+  - [deploy](#deploy)
+  - [remove](#remove)
+  - [status](#status)
+  - [recover](#recover)
+- [AWS Credentials](#aws-credentials)
+- [Features in Detail](#features-in-detail)
+- [Examples](#examples)
+- [Troubleshooting](#troubleshooting)
+- [Requirements](#requirements)
+- [Best Practices](#best-practices)
+- [Testing](#testing)
+- [Contributing](#contributing)
 
 ## Features
 
-- **Easy Setup**: Interactive `init` command with helpful post-install message
+### 🚀 Deployment & Build
+
 - **Simple Deployment**: Deploy with a single command `npx scf-deploy deploy`
-- **TypeScript Configuration**: Type-safe config files with `scf.config.ts`
+- **Auto Build**: Automatically builds your project before deployment
 - **Auto Build Detection**: Automatically finds your build directory (dist, build, out, etc.)
 - **Build Validation**: Ensures deployable files exist before creating AWS resources
-- **Multiple Templates**: Pre-configured templates for React, Vue, Next.js
+- **SSR Detection**: Prevents accidental deployment of SSR builds (.next, .nuxt)
 - **Incremental Deployment**: Only upload changed files (SHA-256 hash comparison)
-- **CloudFront Integration**: Automatic cache invalidation after deployment
+
+### ⚙️ Configuration & Setup
+
+- **Easy Setup**: Interactive `init` command with guided configuration
+- **TypeScript Configuration**: Type-safe config files with full IDE support
 - **Multi-Environment Support**: Manage dev, staging, and prod environments
 - **AWS Credentials Integration**: Supports AWS profiles, environment variables, and IAM roles
+
+### ☁️ CloudFront & Performance
+
+- **CloudFront Integration**: Automatic cache invalidation after deployment
+- **Cache Warming**: Pre-warm edge locations to eliminate cold start latency
+- **Custom Domains**: Built-in support for custom domains with SSL certificates
+- **CDN Optimization**: Configurable price classes and TTL settings
+
+### 📦 State & Resource Management
+
 - **State Management**: Track deployed resources locally with automatic .gitignore handling
 - **State Recovery**: Recover lost state files from AWS resource tags
+- **Resource Tagging**: All AWS resources automatically tagged for easy management
+
+### 💻 Developer Experience
+
 - **Progress Tracking**: Real-time upload progress with visual feedback
-- **SSR Detection**: Prevents accidental deployment of SSR builds (.next, .nuxt)
+- **Detailed Logging**: Clear, colorful output with step-by-step feedback
+- **Error Handling**: Helpful error messages with actionable suggestions
 
 ## Installation
 
-### Global Installation
-
 ```bash
 npm install -g scf-deploy
+```
+
+```bash
+npm install scf-deploy
 ```
 
 ### Direct Execution with npx (Recommended)
@@ -52,18 +101,18 @@ npx scf-deploy init --yes
 Or manually create `scf.config.ts` in your project root:
 
 ```typescript
-import type { SCFConfig } from 'scf-deploy';
+import type { SCFConfig } from "scf-deploy";
 
 const config: SCFConfig = {
-  app: 'my-static-site',
-  region: 'ap-northeast-2',
+  app: "my-static-site",
+  region: "ap-northeast-2",
 
   s3: {
-    bucketName: 'my-site-bucket',
+    bucketName: "my-site-bucket",
     // buildDir is auto-detected (dist, build, out, etc.)
     // You can override: buildDir: './custom-dir',
-    indexDocument: 'index.html',
-    errorDocument: '404.html',
+    indexDocument: "index.html",
+    errorDocument: "404.html",
   },
 
   cloudfront: {
@@ -76,45 +125,49 @@ export default config;
 ```
 
 **Benefits of type annotation:**
+
 - ✅ **IDE auto-completion**: Get suggestions for all available properties
 - ✅ **Type checking**: Catch errors before deployment
 - ✅ **Documentation**: Hover tooltips show property descriptions
 - ✅ **Validation**: Required properties are enforced at compile time
 
-### 2. Build Your Site
-
-```bash
-# For React, Vue, etc.
-npm run build
-
-# For plain HTML
-# Just make sure your files are in the buildDir
-```
-
-### 3. Deploy
+### 2. Deploy
 
 ```bash
 npx scf-deploy deploy
 ```
 
-That's it! Your site is now live on S3 and CloudFront.
+That's it! scf-deploy will:
+
+1. ✅ Automatically build your project (runs `npm run build` if available)
+2. ✅ Auto-detect your build directory (dist, build, out, etc.)
+3. ✅ Validate build output (checks for index.html and web files)
+4. ✅ Upload to S3 with incremental deployment
+5. ✅ Deploy to CloudFront and invalidate cache
+6. ✅ Warm up edge locations (if cache warming is enabled)
+
+**Note:** You can skip auto-build with `--skip-build` flag if needed:
+
+```bash
+npx scf-deploy deploy --skip-build
+```
 
 ## Configuration
 
 ### Basic Configuration
 
 ```typescript
-import type { SCFConfig } from 'scf-deploy';
+import type { SCFConfig } from "scf-deploy";
 
 const config: SCFConfig = {
-  app: 'my-app',           // Application name
-  region: 'us-east-1',     // AWS region
+  app: "my-app", // Application name
+  region: "us-east-1", // AWS region
 
   s3: {
-    bucketName: 'my-bucket',
+    bucketName: "my-bucket",
     // buildDir is optional - auto-detected from: dist, build, out, .output/public, _site
-    indexDocument: 'index.html',
-    errorDocument: '404.html',
+    indexDocument: "index.html",
+    errorDocument: "404.html",
   },
 
   cloudfront: {
@@ -138,15 +191,18 @@ scf-deploy automatically detects your build directory by searching for:
 - `output` - Some SSGs
 
 **Requirements:**
+
 - Directory must contain `index.html` as the entry point
 - Must have deployable web files (.html, .js, .css, etc.)
 
 **SSR Build Detection:**
 scf-deploy will reject SSR build directories that require a server:
+
 - `.next` - Next.js SSR build
 - `.nuxt` - Nuxt SSR build
 
 For Next.js, use `next export` to generate static files in `./out`:
+
 ```bash
 # next.config.js
 module.exports = {
@@ -161,14 +217,14 @@ npm run build
 ### Environment-Specific Configuration
 
 ```typescript
-import type { SCFConfig } from 'scf-deploy';
+import type { SCFConfig } from "scf-deploy";
 
 const config: SCFConfig = {
-  app: 'my-app',
-  region: 'ap-northeast-2',
+  app: "my-app",
+  region: "ap-northeast-2",
 
   s3: {
-    bucketName: 'my-site-prod',
+    bucketName: "my-site-prod",
   },
 
   cloudfront: {
@@ -178,14 +234,14 @@ const config: SCFConfig = {
   // Environment overrides
   environments: {
     dev: {
-      s3: { bucketName: 'my-site-dev' },
-      cloudfront: { enabled: false },  // Skip CloudFront in dev
+      s3: { bucketName: "my-site-dev" },
+      cloudfront: { enabled: false }, // Skip CloudFront in dev
     },
     staging: {
-      s3: { bucketName: 'my-site-staging' },
+      s3: { bucketName: "my-site-staging" },
     },
     prod: {
-      cloudfront: { priceClass: 'PriceClass_All' },  // Use all edge locations in prod
+      cloudfront: { priceClass: "PriceClass_All" }, // Use all edge locations in prod
     },
   },
 };
@@ -196,21 +252,21 @@ export default config;
 ### Custom Domain Configuration
 
 ```typescript
-import type { SCFConfig } from 'scf-deploy';
+import type { SCFConfig } from "scf-deploy";
 
 const config: SCFConfig = {
-  app: 'my-app',
-  region: 'us-east-1',
+  app: "my-app",
+  region: "us-east-1",
 
   s3: {
-    bucketName: 'my-site',
+    bucketName: "my-site",
   },
 
   cloudfront: {
     enabled: true,
     customDomain: {
-      domainName: 'example.com',
-      certificateArn: 'arn:aws:acm:us-east-1:123456789012:certificate/abc-def',
+      domainName: "example.com",
+      certificateArn: "arn:aws:acm:us-east-1:123456789012:certificate/abc-def",
     },
   },
 };
@@ -239,11 +295,13 @@ scf-deploy init --force
 ```
 
 **Options:**
+
 - `-f, --force` - Overwrite existing config file
 - `-y, --yes` - Skip prompts and use default values
 - `-t, --template <template>` - Use template (custom, react, vue, next)
 
 **Templates:**
+
 - `custom` - Custom configuration (default build dir: `./dist`)
 - `react` - React/CRA configuration (build dir: `./build`)
 - `vue` - Vue.js configuration (build dir: `./dist`)
@@ -274,6 +332,7 @@ scf-deploy deploy --force
 ```
 
 **Options:**
+
 - `-e, --env <environment>` - Environment name (default: "default")
 - `-c, --config <path>` - Config file path (default: "scf.config.ts")
 - `-p, --profile <profile>` - AWS profile name
@@ -304,6 +363,7 @@ scf-deploy remove --keep-distribution
 ```
 
 **Options:**
+
 - `-e, --env <environment>` - Environment name (default: "default")
 - `-c, --config <path>` - Config file path (default: "scf.config.ts")
 - `-p, --profile <profile>` - AWS profile name
@@ -330,6 +390,7 @@ scf-deploy status --json
 ```
 
 **Options:**
+
 - `-e, --env <environment>` - Environment name (default: "default")
 - `-d, --detailed` - Show detailed information
 - `--json` - Output as JSON
@@ -352,18 +413,21 @@ scf-deploy recover --force
 ```
 
 **How it works:**
+
 1. Searches for S3 buckets with `scf:managed=true` tag
 2. Finds associated CloudFront distributions
 3. Filters by app name and environment
 4. Reconstructs the state file from AWS resources
 
 **Options:**
+
 - `-e, --env <environment>` - Environment name to recover
 - `-c, --config <path>` - Config file path (default: "scf.config.ts")
 - `-p, --profile <profile>` - AWS profile name
 - `-f, --force` - Overwrite existing state file
 
 **Note:** All AWS resources created by scf-deploy are automatically tagged for recovery:
+
 - `scf:managed=true` - Indicates resource is managed by scf-deploy
 - `scf:app=<app-name>` - Application name from config
 - `scf:environment=<env>` - Environment name
@@ -414,6 +478,7 @@ scf-deploy automatically manages your `.gitignore` file:
 - **One-time**: Only modifies once, won't duplicate entries
 
 This happens automatically during:
+
 - `scf-deploy init` - When initializing configuration
 - `scf-deploy deploy` - After first successful deployment
 
@@ -426,12 +491,14 @@ scf-deploy recover --env prod
 ```
 
 **How it works:**
+
 - All AWS resources are tagged with `scf:managed`, `scf:app`, `scf:environment`
 - `recover` command searches for these tagged resources
 - State file is reconstructed from AWS metadata
 - You can continue deploying without recreating resources
 
 **What can be recovered:**
+
 - S3 bucket information
 - CloudFront distribution ID and domain
 - Resource creation timestamps
@@ -463,59 +530,87 @@ After deployment, scf-deploy automatically:
 Reduce cold start latency by pre-warming CloudFront edge locations after deployment:
 
 ```typescript
-cloudfront: {
-  enabled: true,
-  cacheWarming: {
+import type { SCFConfig } from "scf-deploy";
+
+const config: SCFConfig = {
+  // ... other config
+  cloudfront: {
     enabled: true,
-    paths: ['/', '/index.html', '/app.js'],  // Critical paths only
-    concurrency: 3,                          // Concurrent requests (max: 10)
-    delay: 500,                              // Delay between requests (ms)
+    cacheWarming: {
+      enabled: true,
+      paths: ["/", "/index.html", "/app.js"], // Critical paths only
+      concurrency: 3, // Concurrent requests (max: 10)
+      delay: 500, // Delay between requests (ms)
+    },
   },
-}
+};
+
+export default config;
 ```
 
 **How it works:**
+
 - After CloudFront deployment completes, scf-deploy makes HTTP requests to specified paths
 - Files are downloaded and cached at edge locations
 - First users get cached responses immediately (no cold start)
 
 **Cost considerations:**
+
 - ⚠️ **Data transfer costs**: Downloads files, incurs CloudFront outbound traffic charges
 - **Example**: 10 files × 100KB each × $0.085/GB = ~$0.00009 per deployment
 - **Best practice**: Only warm essential files (HTML, critical JS/CSS)
 - **Avoid**: Large images, videos, or non-critical assets
 
 **When to use:**
+
 - ✅ Production deployments where first-load performance is critical
 - ✅ After major releases to ensure global availability
 - ❌ Development/staging environments (disable to save costs)
 - ❌ High-frequency deployments (costs accumulate)
 
 **Configuration tips:**
+
 ```typescript
-environments: {
-  dev: {
-    cloudfront: {
-      enabled: false,  // No CloudFront = no warming needed
-    },
+import type { SCFConfig } from "scf-deploy";
+
+const config: SCFConfig = {
+  app: "my-app",
+  region: "us-east-1",
+
+  s3: {
+    bucketName: "my-app-bucket",
   },
-  staging: {
-    cloudfront: {
-      enabled: true,
-      cacheWarming: { enabled: false },  // Skip warming in staging
-    },
+
+  cloudfront: {
+    enabled: true,
   },
-  prod: {
-    cloudfront: {
-      cacheWarming: {
+
+  environments: {
+    dev: {
+      cloudfront: {
+        enabled: false, // No CloudFront = no warming needed
+      },
+    },
+    staging: {
+      cloudfront: {
         enabled: true,
-        paths: ['/', '/index.html'],  // Minimal paths
-        concurrency: 3,
-        delay: 500,
+        cacheWarming: { enabled: false }, // Skip warming in staging
+      },
+    },
+    prod: {
+      cloudfront: {
+        cacheWarming: {
+          enabled: true,
+          paths: ["/", "/index.html"], // Minimal paths
+          concurrency: 3,
+          delay: 500,
+        },
       },
     },
   },
-}
+};
+
+export default config;
 ```
 
 ### Multi-Environment Support
@@ -529,6 +624,7 @@ scf-deploy deploy --env prod
 ```
 
 Each environment:
+
 - Has its own state file
 - Can override configuration
 - Is completely isolated
@@ -557,15 +653,15 @@ scf-deploy deploy --env prod
 Configuration:
 
 ```typescript
-import type { SCFConfig } from 'scf-deploy';
+import type { SCFConfig } from "scf-deploy";
 
 const config: SCFConfig = {
-  app: 'my-react-app',
-  region: 'us-east-1',
+  app: "my-react-app",
+  region: "us-east-1",
   s3: {
-    bucketName: 'my-react-app',
+    bucketName: "my-react-app",
     // buildDir auto-detected (React uses ./build by default)
-    indexDocument: 'index.html',
+    indexDocument: "index.html",
   },
   cloudfront: {
     enabled: true,
@@ -588,15 +684,15 @@ scf-deploy deploy
 Configuration:
 
 ```typescript
-import type { SCFConfig } from 'scf-deploy';
+import type { SCFConfig } from "scf-deploy";
 
 const config: SCFConfig = {
-  app: 'my-vue-app',
-  region: 'eu-west-1',
+  app: "my-vue-app",
+  region: "eu-west-1",
   s3: {
-    bucketName: 'my-vue-app',
+    bucketName: "my-vue-app",
     // buildDir auto-detected (Vue uses ./dist by default)
-    indexDocument: 'index.html',
+    indexDocument: "index.html",
   },
   cloudfront: {
     enabled: true,
@@ -609,17 +705,17 @@ export default config;
 ### Static HTML Site
 
 ```typescript
-import type { SCFConfig } from 'scf-deploy';
+import type { SCFConfig } from "scf-deploy";
 
 const config: SCFConfig = {
-  app: 'my-website',
-  region: 'ap-northeast-2',
+  app: "my-website",
+  region: "ap-northeast-2",
   s3: {
-    bucketName: 'my-website',
+    bucketName: "my-website",
     // For custom build directory (not auto-detected)
-    buildDir: './public',
-    indexDocument: 'index.html',
-    errorDocument: '404.html',
+    buildDir: "./public",
+    indexDocument: "index.html",
+    errorDocument: "404.html",
   },
   cloudfront: {
     enabled: true,
@@ -762,51 +858,64 @@ scf-deploy deploy --env prod
 
 ## Best Practices
 
-1. **Build before deploying**: Always run your build command before deployment
+1. **Leverage auto-build**: scf-deploy automatically builds your project
+
    ```bash
-   npm run build && npx scf-deploy deploy
+   # Auto-build is enabled by default
+   npx scf-deploy deploy
+
+   # Or manually build first if you prefer
+   npm run build && npx scf-deploy deploy --skip-build
    ```
 
 2. **State file management**:
+
    - `.deploy/` is automatically added to `.gitignore`
    - Never commit state files to Git
    - Use `scf-deploy recover` if state is lost
 
 3. **Use environment-specific configs**: Separate dev/staging/prod
+
    ```bash
    scf-deploy deploy --env dev    # For development
    scf-deploy deploy --env prod   # For production
    ```
 
 4. **Test with `--dry-run` first**: Preview changes before deploying
+
    ```bash
    scf-deploy deploy --dry-run
    ```
 
 5. **Use IAM roles in CI/CD**: Don't hardcode credentials
+
    - Prefer IAM roles over access keys
    - Use AWS profiles locally
    - Let EC2/ECS IAM roles work automatically
 
 6. **Enable CloudFront in production**: Better performance and HTTPS
+
    - Disable CloudFront in dev to save costs
    - Use `PriceClass_100` for cost optimization
    - Upgrade to `PriceClass_All` for global coverage
 
 7. **Set up custom domain with ACM certificate**: Professional appearance
+
    - Request ACM certificate in `us-east-1` for CloudFront
    - Verify domain ownership
    - Add domain to CloudFront config
 
 8. **Static export for Next.js**: Use `output: 'export'`
+
    ```javascript
    // next.config.js
    module.exports = {
-     output: 'export',
+     output: "export",
    };
    ```
 
 9. **Monitor AWS costs**:
+
    - Check S3 storage and transfer costs
    - Monitor CloudFront data transfer
    - Use CloudWatch for usage metrics
@@ -855,13 +964,13 @@ src/__tests__/
 
 Current test coverage for core modules:
 
-| Module | Coverage |
-|--------|----------|
-| Config Schema | 100% |
-| Config Merger | 100% |
-| Config Loader | 91.66% |
-| File Scanner | 100% |
-| State Manager | 93.1% |
+| Module        | Coverage |
+| ------------- | -------- |
+| Config Schema | 100%     |
+| Config Merger | 100%     |
+| Config Loader | 91.66%   |
+| File Scanner  | 100%     |
+| State Manager | 93.1%    |
 
 **Total Unit Tests**: 130 tests
 
@@ -877,15 +986,15 @@ When contributing, please ensure:
 Example test:
 
 ```typescript
-import { describe, it, expect } from '@jest/globals';
-import { validateConfig } from '../../../core/config/schema.js';
+import { describe, it, expect } from "@jest/globals";
+import { validateConfig } from "../../../core/config/schema.js";
 
-describe('Config Validation', () => {
-  it('should validate a minimal config', () => {
+describe("Config Validation", () => {
+  it("should validate a minimal config", () => {
     const config = {
-      app: 'test-app',
-      region: 'us-east-1',
-      s3: { bucketName: 'test-bucket', buildDir: './dist' },
+      app: "test-app",
+      region: "us-east-1",
+      s3: { bucketName: "test-bucket", buildDir: "./dist" },
     };
 
     expect(() => validateConfig(config)).not.toThrow();
@@ -901,6 +1010,7 @@ describe('Config Validation', () => {
 - `test:coverage` - Generate coverage report (saved to `coverage/`)
 
 Coverage reports are generated in:
+
 - **HTML**: `coverage/index.html` (open in browser)
 - **LCOV**: `coverage/lcov-report/` (for CI/CD tools)
 
