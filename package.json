@@ -1,6 +1,6 @@
 {
   "name": "scf-deploy",
-  "version": "0.1.2",
+  "version": "0.1.0",
   "description": "S3 + CloudFront static deployment automation CLI",
   "type": "module",
   "author": "jeonghodong <fire13764@gmail.com>",
@@ -25,12 +25,13 @@
     "url": "https://github.com/SCF-org/scf/issues"
   },
   "bin": {
-    "scf": "./dist/bin/cli.js"
+    "scf-deploy": "./dist/bin/cli.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "scripts"
   ],
   "scripts": {
     "build": "tsup",
@@ -38,7 +39,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "postinstall": "node scripts/postinstall.js"
   },
   "dependencies": {
     "@aws-sdk/client-cloudfront": "^3.600.0",

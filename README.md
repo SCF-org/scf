@@ -4,8 +4,10 @@ Automate static website deployment to AWS S3 and CloudFront with a simple CLI to
 
 ## Features
 
+- **Easy Setup**: Interactive `init` command with helpful post-install message
 - **Simple Deployment**: Deploy with a single command `npx scf-deploy deploy`
 - **TypeScript Configuration**: Type-safe config files with `scf.config.ts`
+- **Multiple Templates**: Pre-configured templates for React, Vue, Next.js
 - **Incremental Deployment**: Only upload changed files (SHA-256 hash comparison)
 - **CloudFront Integration**: Automatic cache invalidation after deployment
 - **Multi-Environment Support**: Manage dev, staging, and prod environments
@@ -29,9 +31,21 @@ npx scf-deploy deploy
 
 ## Quick Start
 
-### 1. Create Configuration File
+### 1. Initialize Configuration
 
-Create `scf.config.ts` in your project root:
+Run the init command to create `scf.config.ts`:
+
+```bash
+npx scf-deploy init
+```
+
+This will guide you through an interactive setup or you can use defaults:
+
+```bash
+npx scf-deploy init --yes
+```
+
+Or manually create `scf.config.ts` in your project root:
 
 ```typescript
 import { defineConfig } from 'scf-deploy';
@@ -152,6 +166,35 @@ export default defineConfig({
 ```
 
 ## Commands
+
+### init
+
+Initialize `scf.config.ts` configuration file.
+
+```bash
+# Interactive mode (asks questions)
+scf-deploy init
+
+# Non-interactive mode (use defaults)
+scf-deploy init --yes
+
+# Use a template (react, vue, next, custom)
+scf-deploy init --template react
+
+# Overwrite existing config
+scf-deploy init --force
+```
+
+**Options:**
+- `-f, --force` - Overwrite existing config file
+- `-y, --yes` - Skip prompts and use default values
+- `-t, --template <template>` - Use template (custom, react, vue, next)
+
+**Templates:**
+- `custom` - Custom configuration (default build dir: `./dist`)
+- `react` - React/CRA configuration (build dir: `./build`)
+- `vue` - Vue.js configuration (build dir: `./dist`)
+- `next` - Next.js static export (build dir: `./out`)
 
 ### deploy
 
