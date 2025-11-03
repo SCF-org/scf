@@ -160,6 +160,8 @@ export interface LoadConfigOptions {
 }
 
 /**
- * Helper function type for defining config with type safety
+ * Helper function for defining config with type safety and IntelliSense
  */
-export type DefineConfig = (config: SCFConfig) => SCFConfig;
+export function defineConfig(config: SCFConfig): SCFConfig {
+  return config;
+}

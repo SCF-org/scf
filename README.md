@@ -738,6 +738,92 @@ scf-deploy deploy --env prod
     npx scf-deploy@latest deploy
     ```
 
+## Testing
+
+SCF uses Jest as the testing framework with comprehensive unit tests for core functionality.
+
+### Running Tests
+
+```bash
+# Run all tests
+npm test
+
+# Run only unit tests
+npm run test:unit
+
+# Run tests in watch mode
+npm run test:watch
+
+# Run tests with coverage report
+npm run test:coverage
+```
+
+### Test Structure
+
+```
+src/__tests__/
+├── unit/              # Unit tests for core modules
+│   ├── config/        # Config parsing, validation, merging
+│   ├── deployer/      # File scanning, hashing
+│   └── state/         # State management
+├── integration/       # Integration tests (future)
+├── e2e/              # End-to-end tests (future)
+└── fixtures/          # Test data and config files
+```
+
+### Test Coverage
+
+Current test coverage for core modules:
+
+| Module | Coverage |
+|--------|----------|
+| Config Schema | 100% |
+| Config Merger | 100% |
+| Config Loader | 91.66% |
+| File Scanner | 100% |
+| State Manager | 93.1% |
+
+**Total Unit Tests**: 130 tests
+
+### Writing Tests
+
+When contributing, please ensure:
+
+1. **Add tests for new features**: All new functionality should include tests
+2. **Maintain coverage**: Keep coverage above 90% for core modules
+3. **Use fixtures**: Add test data to `src/__tests__/fixtures/`
+4. **Follow patterns**: Match existing test structure and naming
+
+Example test:
+
+```typescript
+import { describe, it, expect } from '@jest/globals';
+import { validateConfig } from '../../../core/config/schema.js';
+
+describe('Config Validation', () => {
+  it('should validate a minimal config', () => {
+    const config = {
+      app: 'test-app',
+      region: 'us-east-1',
+      s3: { bucketName: 'test-bucket', buildDir: './dist' },
+    };
+
+    expect(() => validateConfig(config)).not.toThrow();
+  });
+});
+```
+
+### Test Scripts
+
+- `test` - Run all tests
+- `test:unit` - Run only unit tests
+- `test:watch` - Run tests in watch mode
+- `test:coverage` - Generate coverage report (saved to `coverage/`)
+
+Coverage reports are generated in:
+- **HTML**: `coverage/index.html` (open in browser)
+- **LCOV**: `coverage/lcov-report/` (for CI/CD tools)
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
