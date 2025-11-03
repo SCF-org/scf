@@ -143,6 +143,21 @@ export interface CloudFrontConfig {
     responsePath?: string;
     cacheTTL?: number;
   }>;
+
+  /** Cache warming configuration (warm up CloudFront edge locations after deployment) */
+  cacheWarming?: {
+    /** Enable cache warming */
+    enabled: boolean;
+
+    /** Paths to warm up (default: ['/']) */
+    paths?: string[];
+
+    /** Number of concurrent requests (default: 3, max: 10) */
+    concurrency?: number;
+
+    /** Delay between requests in ms (default: 500ms, min: 100ms) */
+    delay?: number;
+  };
 }
 
 /**

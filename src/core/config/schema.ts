@@ -54,6 +54,16 @@ const errorPageSchema = z.object({
 });
 
 /**
+ * CloudFront cache warming schema
+ */
+const cacheWarmingSchema = z.object({
+  enabled: z.boolean(),
+  paths: z.array(z.string()).default(["/"]),
+  concurrency: z.number().int().min(1).max(10).default(3), // Reduced from 20 to 10, default from 5 to 3
+  delay: z.number().int().min(100).max(5000).default(500), // Increased from 0-5000/100 to 100-5000/500
+});
+
+/**
  * CloudFront configuration schema
  */
 const cloudfrontConfigSchema = z
@@ -77,6 +87,7 @@ const cloudfrontConfigSchema = z
     minTTL: z.number().int().min(0).default(0),
     ipv6: z.boolean().default(true),
     errorPages: z.array(errorPageSchema).optional(),
+    cacheWarming: cacheWarmingSchema.optional(),
   })
   .optional();
 

@@ -444,6 +444,66 @@ After deployment, scf-deploy automatically:
 3. Waits for distribution to be fully deployed
 4. Shows real-time progress
 
+### CloudFront Cache Warming
+
+Reduce cold start latency by pre-warming CloudFront edge locations after deployment:
+
+```typescript
+cloudfront: {
+  enabled: true,
+  cacheWarming: {
+    enabled: true,
+    paths: ['/', '/index.html', '/app.js'],  // Critical paths only
+    concurrency: 3,                          // Concurrent requests (max: 10)
+    delay: 500,                              // Delay between requests (ms)
+  },
+}
+```
+
+**How it works:**
+- After CloudFront deployment completes, scf-deploy makes HTTP requests to specified paths
+- Files are downloaded and cached at edge locations
+- First users get cached responses immediately (no cold start)
+
+**Cost considerations:**
+- ⚠️ **Data transfer costs**: Downloads files, incurs CloudFront outbound traffic charges
+- **Example**: 10 files × 100KB each × $0.085/GB = ~$0.00009 per deployment
+- **Best practice**: Only warm essential files (HTML, critical JS/CSS)
+- **Avoid**: Large images, videos, or non-critical assets
+
+**When to use:**
+- ✅ Production deployments where first-load performance is critical
+- ✅ After major releases to ensure global availability
+- ❌ Development/staging environments (disable to save costs)
+- ❌ High-frequency deployments (costs accumulate)
+
+**Configuration tips:**
+```typescript
+environments: {
+  dev: {
+    cloudfront: {
+      enabled: false,  // No CloudFront = no warming needed
+    },
+  },
+  staging: {
+    cloudfront: {
+      enabled: true,
+      cacheWarming: { enabled: false },  // Skip warming in staging
+    },
+  },
+  prod: {
+    cloudfront: {
+      cacheWarming: {
+        enabled: true,
+        paths: ['/', '/index.html'],  // Minimal paths
+        concurrency: 3,
+        delay: 500,
+      },
+    },
+  },
+}
+```
+
 ### Multi-Environment Support
 
 Manage multiple environments with ease:
