@@ -4,6 +4,7 @@
 
 # Claude Code
 .claude
+.mcp.json
 
 # Dependencies
 node_modules/
