@@ -35,7 +35,9 @@ function generateConfigContent(answers: InitAnswers): string {
  * Build directory is auto-detected (dist, build, out, etc.)
  * You can override it by adding: s3: { buildDir: './custom-dir' }
  */
-const config = {
+import type { SCFConfig } from 'scf-deploy';
+
+const config: SCFConfig = {
   app: '${app}',
   region: '${region}',
 

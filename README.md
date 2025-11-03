@@ -52,7 +52,9 @@ npx scf-deploy init --yes
 Or manually create `scf.config.ts` in your project root:
 
 ```typescript
-const config = {
+import type { SCFConfig } from 'scf-deploy';
+
+const config: SCFConfig = {
   app: 'my-static-site',
   region: 'ap-northeast-2',
 
@@ -72,6 +74,12 @@ const config = {
 
 export default config;
 ```
+
+**Benefits of type annotation:**
+- ✅ **IDE auto-completion**: Get suggestions for all available properties
+- ✅ **Type checking**: Catch errors before deployment
+- ✅ **Documentation**: Hover tooltips show property descriptions
+- ✅ **Validation**: Required properties are enforced at compile time
 
 ### 2. Build Your Site
 
@@ -96,7 +104,9 @@ That's it! Your site is now live on S3 and CloudFront.
 ### Basic Configuration
 
 ```typescript
-const config = {
+import type { SCFConfig } from 'scf-deploy';
+
+const config: SCFConfig = {
   app: 'my-app',           // Application name
   region: 'us-east-1',     // AWS region
 
@@ -151,7 +161,9 @@ npm run build
 ### Environment-Specific Configuration
 
 ```typescript
-const config = {
+import type { SCFConfig } from 'scf-deploy';
+
+const config: SCFConfig = {
   app: 'my-app',
   region: 'ap-northeast-2',
 
@@ -184,7 +196,9 @@ export default config;
 ### Custom Domain Configuration
 
 ```typescript
-const config = {
+import type { SCFConfig } from 'scf-deploy';
+
+const config: SCFConfig = {
   app: 'my-app',
   region: 'us-east-1',
 
@@ -543,7 +557,9 @@ scf-deploy deploy --env prod
 Configuration:
 
 ```typescript
-const config = {
+import type { SCFConfig } from 'scf-deploy';
+
+const config: SCFConfig = {
   app: 'my-react-app',
   region: 'us-east-1',
   s3: {
@@ -572,7 +588,9 @@ scf-deploy deploy
 Configuration:
 
 ```typescript
-const config = {
+import type { SCFConfig } from 'scf-deploy';
+
+const config: SCFConfig = {
   app: 'my-vue-app',
   region: 'eu-west-1',
   s3: {
@@ -591,7 +609,9 @@ export default config;
 ### Static HTML Site
 
 ```typescript
-const config = {
+import type { SCFConfig } from 'scf-deploy';
+
+const config: SCFConfig = {
   app: 'my-website',
   region: 'ap-northeast-2',
   s3: {
