@@ -7,6 +7,7 @@ import { mockClient } from "aws-sdk-client-mock";
 import {
   Route53Client,
   ListHostedZonesCommand,
+  CreateHostedZoneCommand,
 } from "@aws-sdk/client-route-53";
 
 const route53Mock = mockClient(Route53Client);
@@ -41,6 +42,7 @@ describe("Route53Manager", () => {
           {
             Id: "/hostedzone/Z123456789ABC",
             Name: "example.com.",
+            CallerReference: "test-ref",
           },
         ],
       });
@@ -60,6 +62,7 @@ describe("Route53Manager", () => {
           {
             Id: "/hostedzone/Z123456789ABC",
             Name: "example.com.",
+            CallerReference: "test-ref",
           },
         ],
       });
@@ -91,24 +94,13 @@ describe("Route53Manager", () => {
   });
 
   describe("validateHostedZone", () => {
-    it("should throw error when hosted zone not found", async () => {
-      route53Mock.on(ListHostedZonesCommand).resolves({
-        HostedZones: [],
-      });
-
-      const manager = new Route53Manager();
-
-      await expect(manager.validateHostedZone("example.com")).rejects.toThrow(
-        "Route53 Hosted Zone not found for domain"
-      );
-    });
-
     it("should return zone ID when hosted zone exists", async () => {
       route53Mock.on(ListHostedZonesCommand).resolves({
         HostedZones: [
           {
             Id: "/hostedzone/Z123456789ABC",
             Name: "example.com.",
+            CallerReference: "test-ref",
           },
         ],
       });
@@ -117,6 +109,34 @@ describe("Route53Manager", () => {
       const result = await manager.validateHostedZone("example.com");
 
       expect(result).toBe("/hostedzone/Z123456789ABC");
+    });
+
+    it("should auto create hosted zone when not found", async () => {
+      route53Mock.on(ListHostedZonesCommand).resolves({ HostedZones: [] });
+      route53Mock.on(CreateHostedZoneCommand).resolves({
+        HostedZone: {
+          Id: "/hostedzone/ZNEW123",
+          Name: "example.com.",
+          CallerReference: "test-ref",
+        },
+        DelegationSet: { NameServers: ["ns-1.awsdns.com", "ns-2.awsdns.net"] },
+      });
+
+      const manager = new Route53Manager();
+      const result = await manager.validateHostedZone("example.com");
+
+      expect(result).toBe("/hostedzone/ZNEW123");
+    });
+
+    it("should throw when auto creation fails", async () => {
+      route53Mock.on(ListHostedZonesCommand).resolves({ HostedZones: [] });
+      route53Mock.on(CreateHostedZoneCommand).rejects(new Error("boom"));
+
+      const manager = new Route53Manager();
+
+      await expect(manager.validateHostedZone("example.com")).rejects.toThrow(
+        "Hosted zone creation failed"
+      );
     });
   });
 });
