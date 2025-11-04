@@ -52,6 +52,60 @@ export class Route53Manager {
   }
 
   /**
+   * Create A and AAAA Alias records pointing to a CloudFront distribution
+   * Uses CloudFront's global hosted zone id: Z2FDTNDATAQYW2
+   */
+  async createCloudFrontAliasRecords(
+    hostedZoneId: string,
+    domain: string,
+    cloudfrontDomain: string
+  ): Promise<void> {
+    const spinner = ora(
+      `Creating A/AAAA Alias records for ${domain} → ${cloudfrontDomain}...`
+    ).start();
+
+    // CloudFront global hosted zone ID
+    const CLOUDFRONT_ZONE_ID = 'Z2FDTNDATAQYW2';
+
+    try {
+      const fqdn = domain.endsWith('.') ? domain : `${domain}.`;
+      const cfDomain = cloudfrontDomain.endsWith('.')
+        ? cloudfrontDomain
+        : `${cloudfrontDomain}.`;
+
+      const changes: Change[] = [RRType.A, RRType.AAAA].map((rrtype) => ({
+        Action: ChangeAction.UPSERT,
+        ResourceRecordSet: {
+          Name: fqdn,
+          Type: rrtype,
+          AliasTarget: {
+            DNSName: cfDomain,
+            HostedZoneId: CLOUDFRONT_ZONE_ID,
+            EvaluateTargetHealth: false,
+          },
+        },
+      }));
+
+      await this.client.send(
+        new ChangeResourceRecordSetsCommand({
+          HostedZoneId: hostedZoneId,
+          ChangeBatch: {
+            Comment: `CloudFront A/AAAA alias for ${domain} created by scf-deploy`,
+            Changes: changes,
+          },
+        })
+      );
+
+      spinner.succeed(`Created A/AAAA Alias records for ${domain}`);
+    } catch (error) {
+      spinner.fail('Failed to create CloudFront Alias records');
+      throw new Error(
+        `Alias record creation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  }
+
+  /**
    * Fetch NS records (delegation set) for a hosted zone
    */
   async getNameServers(hostedZoneId: string): Promise<string[]> {

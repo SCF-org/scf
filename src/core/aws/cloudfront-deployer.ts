@@ -91,6 +91,12 @@ export async function deployToCloudFront(
   // Create CloudFront client
   const cfClient = createCloudFrontClient(config);
 
+  // Variables used across steps (including after conditional blocks)
+  let cleanZoneIdForError: string | null = null;
+  let route53ManagerRef: Route53Manager | null = null;
+  let hostedZoneCreated = false;
+  let certificateRequestedNew = false;
+
   // Step 0: Auto-create SSL certificate if customDomain is set but certificateArn is missing
   if (
     cloudFrontConfig.customDomain &&
@@ -109,8 +115,7 @@ export async function deployToCloudFront(
     );
     console.log();
 
-    // Track hosted zone for better error messaging on failure
-    let cleanZoneIdForError: string | null = null;
+    // Track hosted zone for better error messaging and for alias creation later
 
     try {
       // Initialize managers with proper credentials
@@ -120,11 +125,15 @@ export async function deployToCloudFront(
         region: config.region,
         credentials,
       });
+      route53ManagerRef = route53Manager;
 
       // Step 0-1: Validate Route53 hosted zone exists
+      // Detect whether hosted zone is going to be created
+      const existingZone = await route53Manager.findHostedZone(domainName);
       const hostedZoneId = await route53Manager.validateHostedZone(domainName);
       const cleanZoneId = route53Manager.extractHostedZoneId(hostedZoneId);
       cleanZoneIdForError = cleanZoneId;
+      hostedZoneCreated = !existingZone;
       console.log(
         chalk.green("✓"),
         `Route53 hosted zone found: ${chalk.cyan(cleanZoneId)}`
@@ -162,6 +171,7 @@ export async function deployToCloudFront(
             certificateArn.split("/").pop()
           )}`
         );
+        certificateRequestedNew = true;
 
         // Step 0-4: Get DNS validation records
         console.log();
@@ -192,6 +202,11 @@ export async function deployToCloudFront(
         );
         console.log(chalk.gray("   This typically takes 5-30 minutes"));
         console.log(chalk.gray("   Please be patient while DNS propagates"));
+        console.log(
+          chalk.gray(
+            "   Note: If your domain is not delegated to Route53 (or the ACM CNAME is not set), this will continue waiting."
+          )
+        );
         console.log();
 
         await acmManager.waitForCertificateValidation(certificateArn, 30);
@@ -486,6 +501,83 @@ export async function deployToCloudFront(
       chalk.green("Custom Domain:"),
       chalk.cyan(`https://${cloudFrontConfig.customDomain.domainName}`)
     );
+
+    // Step 5: Ensure DNS records (A/AAAA Alias) point to CloudFront
+    // Only possible if we validated/created hosted zone earlier
+    try {
+      const credentials = createCredentialProvider(config);
+      const route53Manager = route53ManagerRef || new Route53Manager({ region: config.region, credentials });
+
+      // Re-validate hosted zone to obtain ID if not retained
+      const hostedZoneId = cleanZoneIdForError
+        ? cleanZoneIdForError
+        : route53Manager.extractHostedZoneId(
+            await route53Manager.validateHostedZone(cloudFrontConfig.customDomain.domainName)
+          );
+
+      // Create alias for primary domain
+      await route53Manager.createCloudFrontAliasRecords(
+        hostedZoneId,
+        cloudFrontConfig.customDomain.domainName,
+        distributionDomain
+      );
+
+      // Create alias for additional aliases if any
+      const aliases = cloudFrontConfig.customDomain.aliases || [];
+      for (const alias of aliases) {
+        await route53Manager.createCloudFrontAliasRecords(
+          hostedZoneId,
+          alias,
+          distributionDomain
+        );
+      }
+
+      console.log(
+        chalk.green('✓'),
+        chalk.gray('DNS A/AAAA alias records created for custom domain(s)')
+      );
+    } catch (e: any) {
+      console.log(
+        chalk.yellow('⚠'),
+        chalk.gray(`Failed to create A/AAAA alias records automatically: ${e?.message || String(e)}`)
+      );
+      console.log(
+        chalk.gray('  You can create them manually: A and AAAA Alias to the CloudFront domain in Route53.')
+      );
+    }
+
+    // Step 6: If this was the first setup, show final NS delegation reminder
+    if (hostedZoneCreated || certificateRequestedNew) {
+      try {
+        const credentials = createCredentialProvider(config);
+        const route53Manager = route53ManagerRef || new Route53Manager({ region: config.region, credentials });
+        const hostedZoneId = cleanZoneIdForError
+          ? cleanZoneIdForError
+          : route53Manager.extractHostedZoneId(
+              await route53Manager.validateHostedZone(cloudFrontConfig.customDomain.domainName)
+            );
+        const ns = await route53Manager.getNameServers(hostedZoneId);
+        console.log();
+        console.log(chalk.yellow("IMPORTANT:"));
+        console.log(
+          chalk.gray(
+            "  To finish setup, delegate your domain's name servers (NS) to Route53 at your registrar."
+          )
+        );
+        if (ns.length > 0) {
+          console.log(chalk.gray("  Use these Route53 name servers:"));
+          ns.forEach((n) => console.log(chalk.gray(`    - ${n}`)));
+        }
+        console.log(
+          chalk.gray(
+            "  Without NS delegation (or ACM CNAME on external DNS), certificate validation and domain access may not complete."
+          )
+        );
+        console.log();
+      } catch {
+        // best-effort only
+      }
+    }
   }
 
   console.log(
