@@ -406,14 +406,14 @@ describe('Config Schema Validation', () => {
       expect(() => validateConfig(config)).toThrow();
     });
 
-    it('should reject S3 config without build directory', () => {
+    it('should accept S3 config without build directory (auto-detection)', () => {
       const config = {
         app: 'test-app',
         region: 'us-east-1',
         s3: { bucketName: 'test-bucket' },
       };
 
-      expect(() => validateConfig(config)).toThrow();
+      expect(() => validateConfig(config)).not.toThrow();
     });
   });
 
