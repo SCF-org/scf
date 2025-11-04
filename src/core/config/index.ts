@@ -78,7 +78,7 @@ export async function loadConfig(
 }
 
 // Re-export utilities for user config files
-export { defineConfig, generateExampleConfig } from './utils.js';
+export { generateExampleConfig } from './utils.js';
 
 // Re-export types
 export type { SCFConfig, LoadConfigOptions } from '../../types/config.js';

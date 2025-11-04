@@ -3,14 +3,12 @@
  */
 
 import type { SCFConfig } from '../../types/config.js';
+import { defineConfig as defineConfigFromTypes } from '../../types/config.js';
 
 /**
- * Helper function for defining config with type safety
- * This is exported for user config files
+ * Re-export defineConfig from types for user config files
  */
-export function defineConfig(config: SCFConfig): SCFConfig {
-  return config;
-}
+export const defineConfig = defineConfigFromTypes;
 
 /**
  * Generate example config file content

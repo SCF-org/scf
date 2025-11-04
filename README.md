@@ -927,6 +927,41 @@ scf-deploy deploy --env prod
     npx scf-deploy@latest deploy
     ```
 
+## Git Hooks (Husky)
+
+SCF uses Husky to ensure code quality before pushing to the repository. When you try to push, the following checks run automatically:
+
+### Pre-Push Checks
+
+```bash
+git push origin main
+```
+
+This will automatically run:
+1. **📦 Build Check** - Ensures the project builds without errors
+2. **🔍 Lint Check** - Ensures code follows style guidelines
+3. **🧪 Unit Tests** - Runs all 130 unit tests
+
+If any check fails, the push will be blocked. You must fix the issues before pushing.
+
+### Manual Check
+
+You can run the pre-push checks manually:
+
+```bash
+.husky/pre-push
+```
+
+### Bypassing Checks (Not Recommended)
+
+In emergency situations, you can bypass the checks:
+
+```bash
+git push --no-verify
+```
+
+⚠️ **Warning**: Only use this in emergencies! It's better to fix the issues.
+
 ## Testing
 
 SCF uses Jest as the testing framework with comprehensive unit tests for core functionality.

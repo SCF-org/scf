@@ -14,6 +14,11 @@ export default [
       '**/coverage/**',
       '**/*.config.js',
       '**/*.config.ts',
+      '**/__tests__/**',           // Ignore all test files
+      '**/jest.setup.js',          // Ignore Jest setup
+      '**/jest.global-*.js',       // Ignore Jest global hooks
+      '**/scripts/**',             // Ignore scripts
+      '**/.husky/**',              // Ignore Husky hooks
     ],
   },
 
