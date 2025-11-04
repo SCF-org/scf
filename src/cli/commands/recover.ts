@@ -143,7 +143,7 @@ async function recoverCommand(options: RecoverOptions): Promise<void> {
         }
       }
     }
-  } catch (error) {
+  } catch {
     logger.warn('Failed to list S3 buckets (permission denied or error)');
   }
 
@@ -185,7 +185,7 @@ async function recoverCommand(options: RecoverOptions): Promise<void> {
         }
       }
     }
-  } catch (error) {
+  } catch {
     logger.warn('Failed to list CloudFront distributions (permission denied or error)');
   }
 
@@ -267,10 +267,10 @@ async function recoverCommand(options: RecoverOptions): Promise<void> {
       (d) => d.Id === cfResource.id
     );
 
-    if (dist) {
+    if (dist && dist.Id && dist.DomainName) {
       state = updateCloudFrontResource(state, {
-        distributionId: dist.Id!,
-        domainName: dist.DomainName!,
+        distributionId: dist.Id,
+        domainName: dist.DomainName,
         distributionUrl: `https://${dist.DomainName}`,
       });
     }

@@ -204,7 +204,7 @@ export async function tagBucketForRecovery(
         },
       })
     );
-  } catch (error) {
+  } catch {
     // Non-critical error, just log it
     console.warn('Warning: Failed to tag S3 bucket for recovery');
   }

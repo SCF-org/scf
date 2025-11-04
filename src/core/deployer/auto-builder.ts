@@ -7,7 +7,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import chalk from "chalk";
-import ora, { type Ora } from "ora";
 
 /**
  * Package manager types
@@ -121,8 +120,6 @@ export async function autoBuild(
 
   // Detect package manager
   const packageManager = detectPackageManager(cwd);
-
-  let spinner: Ora | null = null;
 
   if (showProgress) {
     console.log();

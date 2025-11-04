@@ -77,14 +77,10 @@ async function deployCommand(options: DeployOptions): Promise<void> {
   console.log();
 
   // Step 1: Auto-build project
-  try {
-    await autoBuild({
-      showProgress: true,
-      skipBuild,
-    });
-  } catch (error) {
-    throw error;
-  }
+  await autoBuild({
+    showProgress: true,
+    skipBuild,
+  });
 
   // Step 2: Load config
   logger.info("Loading configuration...");
