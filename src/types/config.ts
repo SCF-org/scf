@@ -173,3 +173,11 @@ export interface LoadConfigOptions {
   /** AWS profile override */
   profile?: string;
 }
+
+/**
+ * Helper function to define config with type safety
+ * Provides autocomplete and type checking in user config files
+ */
+export function defineConfig(config: SCFConfig): SCFConfig {
+  return config;
+}
