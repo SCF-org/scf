@@ -6,7 +6,7 @@
 
 Automate static website deployment to AWS S3 and CloudFront with a simple, powerful CLI tool.
 
-**Current Version:** 0.4.1
+**Current Version:** 0.5.0
 
 ## Table of Contents
 
@@ -14,6 +14,7 @@ Automate static website deployment to AWS S3 and CloudFront with a simple, power
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
+- [Automatic SSL Certificate Creation](#automatic-ssl-certificate-creation)
 - [Commands](#commands)
   - [init](#init)
   - [deploy](#deploy)
@@ -47,11 +48,19 @@ Automate static website deployment to AWS S3 and CloudFront with a simple, power
 - **Multi-Environment Support**: Manage dev, staging, and prod environments
 - **AWS Credentials Integration**: Supports AWS profiles, environment variables, and IAM roles
 
+### 🔐 SSL & Custom Domains (NEW in v0.5.0)
+
+- **Automatic SSL Certificate Creation**: Just provide your domain name - SSL certificate is created automatically
+- **Route53 Integration**: Automatic DNS validation record creation
+- **Certificate Reuse**: Automatically detects and reuses existing certificates
+- **Zero Configuration HTTPS**: No need to manually create ACM certificates
+- **Domain Ownership Verification**: Validates Route53 hosted zone before deployment
+
 ### ☁️ CloudFront & Performance
 
 - **CloudFront Integration**: Automatic cache invalidation after deployment
 - **Cache Warming**: Pre-warm edge locations to eliminate cold start latency
-- **Custom Domains**: Built-in support for custom domains with SSL certificates
+- **Custom Domains**: Built-in support for custom domains with automatic SSL
 - **CDN Optimization**: Configurable price classes and TTL settings
 
 ### 📦 State & Resource Management
@@ -249,7 +258,71 @@ const config: SCFConfig = {
 export default config;
 ```
 
-### Custom Domain Configuration
+## Automatic SSL Certificate Creation
+
+**NEW in v0.5.0** - Zero-configuration HTTPS for your custom domains!
+
+### Simple Configuration (Automatic SSL)
+
+Just provide your domain name - scf-deploy handles the rest:
+
+```typescript
+import type { SCFConfig } from "scf-deploy";
+
+const config: SCFConfig = {
+  app: "my-app",
+  region: "us-east-1",
+
+  s3: {
+    bucketName: "my-site",
+  },
+
+  cloudfront: {
+    enabled: true,
+    customDomain: {
+      domainName: "example.com",  // That's it! SSL certificate is created automatically
+    },
+  },
+};
+
+export default config;
+```
+
+### What Happens Automatically
+
+When you deploy with just `domainName`:
+
+1. ✅ **Route53 Validation** - Checks if domain is registered in Route53
+2. ✅ **Certificate Search** - Looks for existing valid certificates
+3. ✅ **Certificate Creation** - Requests new ACM certificate if needed (in us-east-1)
+4. ✅ **DNS Validation** - Creates DNS validation records in Route53
+5. ✅ **Validation Wait** - Waits for certificate to be validated (5-30 minutes)
+6. ✅ **CloudFront Setup** - Applies certificate to CloudFront distribution
+7. ✅ **HTTPS Ready** - Your site is live with HTTPS!
+
+### Deployment Output
+
+```bash
+$ npx scf-deploy deploy --env prod
+
+🔐 Custom domain detected without certificate
+   Domain: example.com
+   Starting automatic SSL certificate creation...
+
+✓ Route53 hosted zone found: Z123456789ABC
+✓ Existing certificate found: abc-123
+   Reusing existing certificate
+✓ SSL certificate ready for CloudFront
+
+📦 S3 uploading...
+☁️ CloudFront deploying...
+✓ Deployment complete!
+   Custom Domain: https://example.com
+```
+
+### Manual Certificate (Optional)
+
+If you already have a certificate or want to manage it manually:
 
 ```typescript
 import type { SCFConfig } from "scf-deploy";
@@ -266,13 +339,28 @@ const config: SCFConfig = {
     enabled: true,
     customDomain: {
       domainName: "example.com",
-      certificateArn: "arn:aws:acm:us-east-1:123456789012:certificate/abc-def",
+      certificateArn: "arn:aws:acm:us-east-1:123456789012:certificate/abc-def",  // Use existing certificate
     },
   },
 };
 
 export default config;
 ```
+
+### Requirements for Automatic SSL
+
+1. **Route53 Hosted Zone**: Your domain must be registered in Route53
+2. **AWS Permissions**: ACM and Route53 permissions required (see below)
+3. **Time**: First deployment takes 5-30 minutes for certificate validation
+4. **Region**: Certificate is automatically created in us-east-1 (CloudFront requirement)
+
+### Certificate Reuse
+
+scf-deploy automatically detects and reuses existing certificates:
+
+- Subsequent deployments: ~5 seconds (no certificate creation)
+- Multiple apps with same domain: Certificate is shared automatically
+- Manual certificates: Always respected when `certificateArn` is provided
 
 ## Commands
 
@@ -340,6 +428,7 @@ scf-deploy deploy --force
 - `--no-cloudfront` - Skip CloudFront deployment
 - `--force` - Force full deployment (ignore state)
 - `--skip-cache` - Skip CloudFront cache invalidation
+- `--skip-build` - Skip automatic build
 
 ### remove
 
@@ -671,14 +760,14 @@ const config: SCFConfig = {
 export default config;
 ```
 
-### Vue Application
+### Vue Application with Custom Domain
 
 ```bash
 # Build your Vue app
 npm run build
 
-# Deploy
-scf-deploy deploy
+# Deploy with automatic SSL
+scf-deploy deploy --env prod
 ```
 
 Configuration:
@@ -696,6 +785,9 @@ const config: SCFConfig = {
   },
   cloudfront: {
     enabled: true,
+    customDomain: {
+      domainName: "myapp.com",  // SSL certificate created automatically!
+    },
   },
 };
 
@@ -719,6 +811,55 @@ const config: SCFConfig = {
   },
   cloudfront: {
     enabled: true,
+  },
+};
+
+export default config;
+```
+
+### Production Site with Full Configuration
+
+```typescript
+import type { SCFConfig } from "scf-deploy";
+
+const config: SCFConfig = {
+  app: "production-app",
+  region: "us-east-1",
+
+  s3: {
+    bucketName: "production-app-site",
+    indexDocument: "index.html",
+    errorDocument: "404.html",
+  },
+
+  cloudfront: {
+    enabled: true,
+    priceClass: "PriceClass_All",  // Global coverage
+
+    customDomain: {
+      domainName: "www.example.com",
+      // Certificate created automatically (requires Route53)
+    },
+
+    cacheWarming: {
+      enabled: true,
+      paths: ["/", "/index.html"],
+      concurrency: 5,
+      delay: 300,
+    },
+  },
+
+  environments: {
+    staging: {
+      s3: { bucketName: "staging-app-site" },
+      cloudfront: {
+        priceClass: "PriceClass_100",
+        customDomain: {
+          domainName: "staging.example.com",
+        },
+        cacheWarming: { enabled: false },
+      },
+    },
   },
 };
 
@@ -814,6 +955,57 @@ scf-deploy recover --env prod
 scf-deploy deploy --env prod
 ```
 
+### Route53 Hosted Zone Not Found
+
+```bash
+# Error: Route53 Hosted Zone not found for domain: example.com
+# Solution: Create Route53 hosted zone
+
+# 1. Go to AWS Route53 Console
+# 2. Create hosted zone for your domain
+# 3. Update domain nameservers to Route53 nameservers
+# 4. Retry deployment
+
+# Or use manual certificate:
+cloudfront: {
+  enabled: true,
+  customDomain: {
+    domainName: "example.com",
+    certificateArn: "arn:aws:acm:us-east-1:123456789012:certificate/abc-def",
+  },
+}
+```
+
+### Certificate Validation Timeout
+
+```bash
+# Error: Certificate validation timed out after 30 minutes
+# Possible causes:
+# 1. DNS records not propagated yet
+# 2. Incorrect Route53 configuration
+# 3. Domain nameservers not pointing to Route53
+
+# Solution:
+# 1. Check DNS validation records in Route53
+# 2. Verify domain nameservers: dig NS example.com
+# 3. Wait for DNS propagation (up to 48 hours)
+# 4. Retry deployment: scf-deploy deploy --env prod
+```
+
+### ACM or Route53 Permission Denied
+
+```bash
+# Error: AccessDenied - route53:ChangeResourceRecordSets
+# Solution: Add required permissions to your IAM user/role
+
+# Required permissions for automatic SSL:
+# - acm:RequestCertificate
+# - acm:DescribeCertificate
+# - acm:ListCertificates
+# - route53:ListHostedZones
+# - route53:ChangeResourceRecordSets
+```
+
 ## Requirements
 
 - **Node.js**: >= 18.0.0
@@ -821,6 +1013,8 @@ scf-deploy deploy --env prod
 - **AWS Credentials**: Configured via CLI, environment, or IAM role
 
 ### Required AWS Permissions
+
+#### Basic Deployment (S3 + CloudFront)
 
 ```json
 {
@@ -847,6 +1041,28 @@ scf-deploy deploy --env prod
         "cloudfront:ListDistributions",
         "cloudfront:TagResource",
         "cloudfront:ListTagsForResource"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+#### Additional Permissions for Automatic SSL (NEW in v0.5.0)
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "acm:RequestCertificate",
+        "acm:DescribeCertificate",
+        "acm:ListCertificates",
+        "route53:ListHostedZones",
+        "route53:ChangeResourceRecordSets",
+        "route53:GetChange"
       ],
       "Resource": "*"
     }
@@ -899,11 +1115,21 @@ scf-deploy deploy --env prod
    - Use `PriceClass_100` for cost optimization
    - Upgrade to `PriceClass_All` for global coverage
 
-7. **Set up custom domain with ACM certificate**: Professional appearance
+7. **Use automatic SSL for custom domains** (NEW in v0.5.0):
 
-   - Request ACM certificate in `us-east-1` for CloudFront
-   - Verify domain ownership
-   - Add domain to CloudFront config
+   - Just provide `domainName` - certificate is created automatically
+   - Requires Route53 hosted zone for your domain
+   - First deployment takes 5-30 minutes for certificate validation
+   - Subsequent deployments: instant (certificate is reused)
+
+   ```typescript
+   cloudfront: {
+     enabled: true,
+     customDomain: {
+       domainName: "example.com",  // SSL handled automatically!
+     },
+   }
+   ```
 
 8. **Static export for Next.js**: Use `output: 'export'`
 
@@ -919,6 +1145,7 @@ scf-deploy deploy --env prod
    - Check S3 storage and transfer costs
    - Monitor CloudFront data transfer
    - Use CloudWatch for usage metrics
+   - ACM certificates are free (no additional cost)
 
 10. **Keep your CLI updated**:
     ```bash
@@ -940,7 +1167,7 @@ git push origin main
 This will automatically run:
 1. **📦 Build Check** - Ensures the project builds without errors
 2. **🔍 Lint Check** - Ensures code follows style guidelines
-3. **🧪 Unit Tests** - Runs all 130 unit tests
+3. **🧪 Unit Tests** - Runs all 143 unit tests
 
 If any check fails, the push will be blocked. You must fix the issues before pushing.
 
@@ -987,6 +1214,7 @@ npm run test:coverage
 ```
 src/__tests__/
 ├── unit/              # Unit tests for core modules
+│   ├── aws/           # ACM, Route53, CloudFront, S3 managers
 │   ├── config/        # Config parsing, validation, merging
 │   ├── deployer/      # File scanning, hashing
 │   └── state/         # State management
@@ -999,15 +1227,17 @@ src/__tests__/
 
 Current test coverage for core modules:
 
-| Module        | Coverage |
-| ------------- | -------- |
-| Config Schema | 100%     |
-| Config Merger | 100%     |
-| Config Loader | 91.66%   |
-| File Scanner  | 100%     |
-| State Manager | 93.1%    |
+| Module           | Coverage |
+| ---------------- | -------- |
+| Config Schema    | 100%     |
+| Config Merger    | 100%     |
+| Config Loader    | 91.66%   |
+| File Scanner     | 100%     |
+| State Manager    | 93.1%    |
+| ACM Manager      | 85%      |
+| Route53 Manager  | 88%      |
 
-**Total Unit Tests**: 130 tests
+**Total Unit Tests**: 143 tests
 
 ### Writing Tests
 
@@ -1062,6 +1292,23 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## License
 
 MIT License - see [LICENSE](LICENSE) file for details
+
+## Changelog
+
+### v0.5.0 (2025-01-XX)
+
+**🔐 Automatic SSL Certificate Creation**
+
+- ✨ Zero-configuration HTTPS for custom domains
+- ✨ Automatic ACM certificate creation and validation
+- ✨ Route53 DNS validation record automation
+- ✨ Certificate reuse detection
+- ✨ Domain ownership verification
+- 📝 certificateArn is now optional
+- 🧪 143 unit tests (was 130)
+
+**Breaking Changes:**
+- None - fully backward compatible
 
 ## Links
 

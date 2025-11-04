@@ -1,7 +1,7 @@
 {
   "name": "scf-deploy",
-  "version": "0.4.1",
-  "description": "S3 + CloudFront static deployment automation CLI",
+  "version": "0.5.0",
+  "description": "S3 + CloudFront static deployment automation CLI with automatic SSL certificate creation",
   "type": "module",
   "author": "jeonghodong <fire13764@gmail.com>",
   "license": "MIT",
@@ -14,7 +14,13 @@
     "static-site",
     "cdn",
     "aws-deployment",
-    "static-hosting"
+    "static-hosting",
+    "ssl",
+    "https",
+    "acm",
+    "route53",
+    "automatic-ssl",
+    "custom-domain"
   ],
   "homepage": "https://github.com/SCF-org",
   "repository": {
@@ -51,7 +57,9 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@aws-sdk/client-acm": "^3.600.0",
     "@aws-sdk/client-cloudfront": "^3.600.0",
+    "@aws-sdk/client-route-53": "^3.600.0",
     "@aws-sdk/client-s3": "^3.600.0",
     "@aws-sdk/client-sts": "^3.600.0",
     "@aws-sdk/credential-providers": "^3.600.0",

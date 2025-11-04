@@ -83,16 +83,7 @@ export function validateRequiredFields(config: SCFConfig): void {
   }
 
   // buildDir is now optional - it will be auto-detected during deployment
-
-  if (
-    config.cloudfront?.enabled &&
-    config.cloudfront.customDomain &&
-    !config.cloudfront.customDomain.certificateArn
-  ) {
-    errors.push(
-      'cloudfront.customDomain.certificateArn is required when using custom domain'
-    );
-  }
+  // certificateArn is now optional - it will be auto-created if not provided
 
   if (errors.length > 0) {
     throw new Error(

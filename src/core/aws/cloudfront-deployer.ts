@@ -25,6 +25,9 @@ import {
   updateCloudFrontResource,
   getCloudFrontResource,
 } from "../state/index.js";
+import { ACMManager } from "./acm-manager.js";
+import { Route53Manager } from "./route53-manager.js";
+import { createCredentialProvider } from "./credentials.js";
 
 /**
  * CloudFront deployment options
@@ -87,6 +90,191 @@ export async function deployToCloudFront(
 
   // Create CloudFront client
   const cfClient = createCloudFrontClient(config);
+
+  // Step 0: Auto-create SSL certificate if customDomain is set but certificateArn is missing
+  if (
+    cloudFrontConfig.customDomain &&
+    !cloudFrontConfig.customDomain.certificateArn
+  ) {
+    const domainName = cloudFrontConfig.customDomain.domainName;
+    const aliases = cloudFrontConfig.customDomain.aliases;
+
+    console.log();
+    console.log(
+      chalk.bold.cyan("🔐 Custom domain detected without certificate")
+    );
+    console.log(chalk.gray(`   Domain: ${domainName}`));
+    console.log(
+      chalk.gray("   Starting automatic SSL certificate creation...")
+    );
+    console.log();
+
+    // Track hosted zone for better error messaging on failure
+    let cleanZoneIdForError: string | null = null;
+
+    try {
+      // Initialize managers with proper credentials
+      const credentials = createCredentialProvider(config);
+      const acmManager = new ACMManager({ credentials });
+      const route53Manager = new Route53Manager({
+        region: config.region,
+        credentials,
+      });
+
+      // Step 0-1: Validate Route53 hosted zone exists
+      const hostedZoneId = await route53Manager.validateHostedZone(domainName);
+      const cleanZoneId = route53Manager.extractHostedZoneId(hostedZoneId);
+      cleanZoneIdForError = cleanZoneId;
+      console.log(
+        chalk.green("✓"),
+        `Route53 hosted zone found: ${chalk.cyan(cleanZoneId)}`
+      );
+
+      // Step 0-2: Check for existing certificate
+      const existingCertArn = await acmManager.findExistingCertificate(
+        domainName
+      );
+
+      let certificateArn: string;
+
+      if (existingCertArn) {
+        console.log(
+          chalk.green("✓"),
+          `Existing certificate found: ${chalk.cyan(
+            existingCertArn.split("/").pop()
+          )}`
+        );
+        console.log(chalk.gray("   Reusing existing certificate"));
+        certificateArn = existingCertArn;
+      } else {
+        // Step 0-3: Request new certificate
+        console.log(
+          chalk.yellow("⚠"),
+          "No existing certificate found - creating new one"
+        );
+        certificateArn = await acmManager.requestCertificate(
+          domainName,
+          aliases
+        );
+        console.log(
+          chalk.green("✓"),
+          `Certificate requested: ${chalk.cyan(
+            certificateArn.split("/").pop()
+          )}`
+        );
+
+        // Step 0-4: Get DNS validation records
+        console.log();
+        console.log(
+          chalk.gray("   Waiting for validation records to be available...")
+        );
+
+        // Wait a bit for AWS to generate validation records
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+
+        const validationRecords =
+          await acmManager.getCertificateValidationRecords(certificateArn);
+        console.log(
+          chalk.green("✓"),
+          `Got ${validationRecords.length} DNS validation record(s)`
+        );
+
+        // Step 0-5: Create DNS validation records in Route53
+        await route53Manager.createValidationRecords(
+          cleanZoneId,
+          validationRecords
+        );
+
+        // Step 0-6: Wait for certificate validation
+        console.log();
+        console.log(
+          chalk.bold.yellow("⏳ Waiting for certificate validation...")
+        );
+        console.log(chalk.gray("   This typically takes 5-30 minutes"));
+        console.log(chalk.gray("   Please be patient while DNS propagates"));
+        console.log();
+
+        await acmManager.waitForCertificateValidation(certificateArn, 30);
+
+        console.log();
+        console.log(
+          chalk.green("✓"),
+          chalk.bold("Certificate validated successfully!")
+        );
+      }
+
+      // Update config with certificate ARN
+      cloudFrontConfig.customDomain.certificateArn = certificateArn;
+
+      console.log();
+      console.log(
+        chalk.green("✓"),
+        chalk.bold("SSL certificate ready for CloudFront")
+      );
+      console.log();
+    } catch (error) {
+      console.log();
+      console.log(
+        chalk.red("✗"),
+        chalk.bold("SSL certificate creation failed")
+      );
+      console.log();
+
+      if (error instanceof Error) {
+        console.error(chalk.red(error.message));
+      }
+
+      console.log();
+      console.log(chalk.yellow("Next steps:"));
+      console.log(
+        chalk.gray(
+          "  - ACM is handled automatically. You only need to delegate your domain's name servers (NS) to Route53."
+        )
+      );
+      if (cleanZoneIdForError) {
+        try {
+          const credentials = createCredentialProvider(config);
+          const route53Manager = new Route53Manager({
+            region: config.region,
+            credentials,
+          });
+          const nameServers = await route53Manager.getNameServers(
+            cleanZoneIdForError
+          );
+          if (nameServers.length > 0) {
+            console.log(
+              chalk.gray(
+                "  - Update your domain registrar to use the following Route53 name servers:"
+              )
+            );
+            nameServers.forEach((ns) => console.log(chalk.gray(`    - ${ns}`)));
+          }
+        } catch {
+          // best-effort: ignore
+        }
+      }
+      console.log(
+        chalk.gray(
+          "  - After NS delegation propagates, rerun the deployment command."
+        )
+      );
+      console.log();
+      console.log(chalk.yellow("Alternative:"));
+      console.log(
+        chalk.gray(
+          "  1) Keep external DNS: add ACM's CNAME validation record to your external DNS manually."
+        )
+      );
+      console.log(
+        chalk.gray(
+          "  2) Or issue a certificate manually in ACM Console and set certificateArn in scf.config.ts."
+        )
+      );
+      console.log();
+
+      throw error;
+    }
+  }
 
   // Load state to get existing distribution ID
   let state = loadState({ environment });

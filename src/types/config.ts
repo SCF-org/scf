@@ -110,15 +110,25 @@ export interface CloudFrontConfig {
   enabled: boolean;
 
   /** Distribution price class */
-  priceClass?: 'PriceClass_100' | 'PriceClass_200' | 'PriceClass_All';
+  priceClass?: "PriceClass_100" | "PriceClass_200" | "PriceClass_All";
 
   /** Custom domain configuration */
   customDomain?: {
     /** Domain name (e.g., example.com) */
     domainName: string;
 
-    /** ACM certificate ARN */
-    certificateArn: string;
+    /**
+     * ACM certificate ARN (optional - will be auto-created if omitted)
+     *
+     * If not provided, scf will automatically:
+     * 1. Check for existing certificate in ACM
+     * 2. Create new certificate if needed
+     * 3. Create DNS validation records in Route53
+     * 4. Wait for certificate validation
+     *
+     * Note: Requires Route53 hosted zone for the domain
+     */
+    certificateArn?: string;
 
     /** Alternative domain names (CNAMEs) */
     aliases?: string[];

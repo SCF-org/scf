@@ -24,7 +24,7 @@ export interface CreateDistributionOptions {
   indexDocument?: string;
   customDomain?: {
     domainName: string;
-    certificateArn: string;
+    certificateArn?: string;
     aliases?: string[];
   };
   priceClass?: 'PriceClass_100' | 'PriceClass_200' | 'PriceClass_All';
@@ -186,7 +186,7 @@ export async function createDistribution(
   };
 
   // Add custom domain configuration
-  if (customDomain) {
+  if (customDomain && customDomain.certificateArn) {
     distributionConfig.Aliases = {
       Quantity: customDomain.aliases?.length || 1,
       Items: customDomain.aliases || [customDomain.domainName],
@@ -263,7 +263,7 @@ export async function updateDistribution(
     currentConfig.IsIPV6Enabled = updates.ipv6;
   }
 
-  if (updates.customDomain) {
+  if (updates.customDomain && updates.customDomain.certificateArn) {
     currentConfig.Aliases = {
       Quantity: updates.customDomain.aliases?.length || 1,
       Items: updates.customDomain.aliases || [updates.customDomain.domainName],

@@ -57,6 +57,18 @@ const config: SCFConfig = {
     //   concurrency: 3,                     // Concurrent requests (default: 3, max: 10)
     //   delay: 500,                         // Delay between requests in ms (default: 500ms)
     // },
+
+    // Custom Domain with HTTPS (automatic SSL certificate creation)
+    // Uncomment to enable custom domain with automatic SSL:
+    // customDomain: {
+    //   domainName: 'example.com',
+    //   // certificateArn is OPTIONAL - will be auto-created if not provided
+    //   // Requirements for auto-creation:
+    //   //   1. Domain must be registered in Route53
+    //   //   2. DNS validation will take 5-30 minutes
+    //   //   3. Requires ACM and Route53 permissions
+    //   // certificateArn: 'arn:aws:acm:us-east-1:123456789012:certificate/abc-def', // Optional
+    // },
   },
 
   // Environment-specific overrides

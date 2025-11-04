@@ -1,0 +1,357 @@
+/**
+ * Route53 Manager
+ * Handles DNS record management for domain validation and CloudFront aliases
+ */
+
+import {
+  Route53Client,
+  ListHostedZonesCommand,
+  ChangeResourceRecordSetsCommand,
+  CreateHostedZoneCommand,
+  type CreateHostedZoneRequest,
+  GetHostedZoneCommand,
+  type HostedZone,
+  type Change,
+  ChangeAction,
+  RRType,
+} from "@aws-sdk/client-route-53";
+import type { AwsCredentialIdentityProvider } from "@aws-sdk/types";
+import chalk from "chalk";
+import ora from "ora";
+import type { CertificateValidationRecord } from "./acm-manager.js";
+
+/**
+ * Route53 Manager options
+ */
+export interface Route53ManagerOptions {
+  region?: string;
+  credentials?: AwsCredentialIdentityProvider;
+}
+
+/**
+ * DNS record to create
+ */
+export interface DnsRecord {
+  name: string;
+  type: string;
+  value: string;
+  ttl?: number;
+}
+
+/**
+ * Route53 Manager for DNS operations
+ */
+export class Route53Manager {
+  private client: Route53Client;
+
+  constructor(options: Route53ManagerOptions = {}) {
+    this.client = new Route53Client({
+      region: options.region || "us-east-1",
+      credentials: options.credentials,
+    });
+  }
+
+  /**
+   * Fetch NS records (delegation set) for a hosted zone
+   */
+  async getNameServers(hostedZoneId: string): Promise<string[]> {
+    const id = this.extractHostedZoneId(hostedZoneId);
+    try {
+      const { DelegationSet } = await this.client.send(
+        new GetHostedZoneCommand({ Id: id })
+      );
+      return DelegationSet?.NameServers || [];
+    } catch (_error) {
+      return [];
+    }
+  }
+
+  /**
+   * Create a public hosted zone for a domain (if it does not already exist)
+   * Returns the created hosted zone object
+   */
+  private async createHostedZone(domain: string): Promise<HostedZone> {
+    // Ensure trailing dot per Route53 expectation
+    const zoneName = domain.endsWith(".") ? domain : `${domain}.`;
+
+    const spinner = ora(
+      `Creating Route53 hosted zone for ${domain}...`
+    ).start();
+
+    try {
+      const callerReference = `scf-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2)}`;
+
+      const input: CreateHostedZoneRequest = {
+        Name: zoneName,
+        CallerReference: callerReference,
+        HostedZoneConfig: {
+          Comment: "Hosted zone created by scf-deploy",
+          PrivateZone: false,
+        },
+      };
+
+      const { HostedZone, DelegationSet } = await this.client.send(
+        new CreateHostedZoneCommand(input)
+      );
+
+      if (!HostedZone) {
+        throw new Error("CreateHostedZone returned no HostedZone");
+      }
+
+      spinner.succeed(`Hosted zone created: ${HostedZone.Id || zoneName}`);
+
+      if (DelegationSet?.NameServers && DelegationSet.NameServers.length > 0) {
+        console.log();
+        console.log(
+          chalk.gray("   Name servers (update at your domain registrar):")
+        );
+        for (const ns of DelegationSet.NameServers) {
+          console.log(chalk.gray(`   - ${ns}`));
+        }
+        console.log();
+      }
+
+      return HostedZone;
+    } catch (error) {
+      spinner.fail("Failed to create Route53 hosted zone");
+      throw new Error(
+        `Hosted zone creation failed: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    }
+  }
+
+  /**
+   * Find hosted zone for a domain
+   * Supports both apex domains (example.com) and subdomains (www.example.com)
+   */
+  async findHostedZone(domain: string): Promise<HostedZone | null> {
+    try {
+      const { HostedZones } = await this.client.send(
+        new ListHostedZonesCommand({})
+      );
+
+      if (!HostedZones || HostedZones.length === 0) {
+        return null;
+      }
+
+      // Normalize domain (remove trailing dot if present)
+      const normalizedDomain = domain.endsWith(".") ? domain : `${domain}.`;
+
+      // First, try exact match
+      for (const zone of HostedZones) {
+        if (zone.Name === normalizedDomain) {
+          return zone;
+        }
+      }
+
+      // If no exact match, find the best matching parent zone
+      // For subdomain.example.com, find example.com zone
+      const parts = domain.split(".");
+      for (let i = 0; i < parts.length - 1; i++) {
+        const parentDomain = parts.slice(i).join(".");
+        const normalizedParent = parentDomain.endsWith(".")
+          ? parentDomain
+          : `${parentDomain}.`;
+
+        for (const zone of HostedZones) {
+          if (zone.Name === normalizedParent) {
+            return zone;
+          }
+        }
+      }
+
+      return null;
+    } catch (error) {
+      throw new Error(
+        `Failed to find hosted zone for ${domain}: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    }
+  }
+
+  /**
+   * Create DNS validation records for ACM certificate
+   */
+  async createValidationRecords(
+    hostedZoneId: string,
+    validationRecords: CertificateValidationRecord[]
+  ): Promise<void> {
+    if (validationRecords.length === 0) {
+      throw new Error("No validation records provided");
+    }
+
+    const spinner = ora("Creating DNS validation records...").start();
+
+    try {
+      const changes: Change[] = validationRecords.map((record) => ({
+        Action: ChangeAction.UPSERT,
+        ResourceRecordSet: {
+          Name: record.name,
+          Type: record.type as RRType,
+          TTL: 300,
+          ResourceRecords: [{ Value: record.value }],
+        },
+      }));
+
+      await this.client.send(
+        new ChangeResourceRecordSetsCommand({
+          HostedZoneId: hostedZoneId,
+          ChangeBatch: {
+            Comment: "ACM certificate validation records created by scf-deploy",
+            Changes: changes,
+          },
+        })
+      );
+
+      spinner.succeed(
+        `Created ${validationRecords.length} DNS validation record(s)`
+      );
+    } catch (error) {
+      spinner.fail("Failed to create DNS validation records");
+      throw new Error(
+        `DNS record creation failed: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }\n\n` +
+          "Please check:\n" +
+          "  - You have route53:ChangeResourceRecordSets permission\n" +
+          "  - The hosted zone ID is correct\n" +
+          "  - DNS records are not conflicting with existing records"
+      );
+    }
+  }
+
+  /**
+   * Create CNAME record pointing to CloudFront distribution
+   */
+  async createCloudfrontAlias(
+    hostedZoneId: string,
+    domain: string,
+    cloudfrontDomain: string
+  ): Promise<void> {
+    const spinner = ora(`Creating DNS CNAME record for ${domain}...`).start();
+
+    try {
+      // Ensure domain ends with a dot for Route53
+      const fqdn = domain.endsWith(".") ? domain : `${domain}.`;
+      const cfDomain = cloudfrontDomain.endsWith(".")
+        ? cloudfrontDomain
+        : `${cloudfrontDomain}.`;
+
+      await this.client.send(
+        new ChangeResourceRecordSetsCommand({
+          HostedZoneId: hostedZoneId,
+          ChangeBatch: {
+            Comment: `CloudFront alias for ${domain} created by scf-deploy`,
+            Changes: [
+              {
+                Action: ChangeAction.UPSERT,
+                ResourceRecordSet: {
+                  Name: fqdn,
+                  Type: RRType.CNAME,
+                  TTL: 300,
+                  ResourceRecords: [{ Value: cfDomain }],
+                },
+              },
+            ],
+          },
+        })
+      );
+
+      spinner.succeed(`Created CNAME record: ${domain} → ${cloudfrontDomain}`);
+    } catch (error) {
+      spinner.fail("Failed to create CloudFront CNAME record");
+      throw new Error(
+        `CNAME record creation failed: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    }
+  }
+
+  /**
+   * Create multiple DNS records at once
+   */
+  async createRecords(
+    hostedZoneId: string,
+    records: DnsRecord[]
+  ): Promise<void> {
+    if (records.length === 0) {
+      return;
+    }
+
+    const spinner = ora(`Creating ${records.length} DNS record(s)...`).start();
+
+    try {
+      const changes: Change[] = records.map((record) => ({
+        Action: ChangeAction.UPSERT,
+        ResourceRecordSet: {
+          Name: record.name.endsWith(".") ? record.name : `${record.name}.`,
+          Type: record.type as RRType,
+          TTL: record.ttl || 300,
+          ResourceRecords: [{ Value: record.value }],
+        },
+      }));
+
+      await this.client.send(
+        new ChangeResourceRecordSetsCommand({
+          HostedZoneId: hostedZoneId,
+          ChangeBatch: {
+            Comment: "DNS records created by scf-deploy",
+            Changes: changes,
+          },
+        })
+      );
+
+      spinner.succeed(`Created ${records.length} DNS record(s)`);
+    } catch (error) {
+      spinner.fail("Failed to create DNS records");
+      throw new Error(
+        `DNS record creation failed: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    }
+  }
+
+  /**
+   * Ensure that hosted zone exists and is accessible.
+   * If not found, automatically creates a public hosted zone for the domain.
+   */
+  async validateHostedZone(domain: string): Promise<string> {
+    let zone = await this.findHostedZone(domain);
+
+    if (!zone) {
+      console.log();
+      console.log(
+        chalk.yellow("⚠"),
+        `Route53 hosted zone not found for ${chalk.bold(domain)}`
+      );
+      console.log(
+        chalk.gray("   Creating public hosted zone automatically...")
+      );
+      console.log();
+
+      zone = await this.createHostedZone(domain);
+    }
+
+    if (!zone.Id) {
+      throw new Error("Hosted zone found but ID is missing");
+    }
+
+    return zone.Id;
+  }
+
+  /**
+   * Get hosted zone ID from zone object
+   */
+  extractHostedZoneId(hostedZoneId: string): string {
+    // Route53 returns IDs like "/hostedzone/Z123456789ABC"
+    // We need just "Z123456789ABC"
+    return hostedZoneId.replace("/hostedzone/", "");
+  }
+}

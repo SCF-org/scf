@@ -30,10 +30,6 @@ const s3ConfigSchema = z
         /^[a-z0-9][a-z0-9.-]*[a-z0-9]$/,
         "Bucket name must follow S3 naming rules"
       ),
-    buildDir: z
-      .string()
-      .min(1, "Build directory cannot be empty")
-      .optional(),
     indexDocument: z.string().default("index.html"),
     errorDocument: z.string().optional(),
     websiteHosting: z.boolean().default(true),
@@ -78,7 +74,8 @@ const cloudfrontConfigSchema = z
         domainName: z.string().min(1, "Domain name is required"),
         certificateArn: z
           .string()
-          .regex(/^arn:aws:acm:/, "Must be a valid ACM certificate ARN"),
+          .regex(/^arn:aws:acm:/, "Must be a valid ACM certificate ARN")
+          .optional(),
         aliases: z.array(z.string()).optional(),
       })
       .optional(),
