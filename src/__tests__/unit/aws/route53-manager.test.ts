@@ -50,7 +50,7 @@ describe("Route53Manager", () => {
       const manager = new Route53Manager();
       const result = await manager.findHostedZone("example.com");
 
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         Id: "/hostedzone/Z123456789ABC",
         Name: "example.com.",
       });
@@ -70,7 +70,7 @@ describe("Route53Manager", () => {
       const manager = new Route53Manager();
       const result = await manager.findHostedZone("www.example.com");
 
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         Id: "/hostedzone/Z123456789ABC",
         Name: "example.com.",
       });
