@@ -2,27 +2,24 @@
  * Remove command - Delete all deployed AWS resources
  */
 
-import { Command } from 'commander';
-import chalk from 'chalk';
-import inquirer from 'inquirer';
-import * as logger from '../utils/logger.js';
-import { loadConfig } from '../../core/config/index.js';
-import { getCredentials } from '../../core/aws/index.js';
+import { Command } from "commander";
+import chalk from "chalk";
+import inquirer from "inquirer";
+import * as logger from "../utils/logger.js";
+import { loadConfig } from "../../core/config/index.js";
+import { getCredentials } from "../../core/aws/index.js";
+import { loadState, stateExists, deleteState } from "../../core/state/index.js";
+import { discoverAllResources } from "../../core/aws/resource-discovery.js";
+import { deleteS3Bucket } from "../../core/aws/s3-bucket.js";
+import { deleteCloudFrontDistribution } from "../../core/aws/cloudfront-distribution.js";
 import {
-  loadState,
-  stateExists,
-  deleteState,
-} from '../../core/state/index.js';
-import {
-  discoverAllResources,
-} from '../../core/aws/resource-discovery.js';
-import { deleteS3Bucket } from '../../core/aws/s3-bucket.js';
-import { deleteCloudFrontDistribution } from '../../core/aws/cloudfront-distribution.js';
-import { createS3Client, createCloudFrontClient } from '../../core/aws/client.js';
-import { ACMManager } from '../../core/aws/acm-manager.js';
-import { Route53Manager } from '../../core/aws/route53-manager.js';
-import type { DeploymentState } from '../../types/state.js';
-import type { DiscoveredResources } from '../../types/discovery.js';
+  createS3Client,
+  createCloudFrontClient,
+} from "../../core/aws/client.js";
+import { ACMManager } from "../../core/aws/acm-manager.js";
+import { Route53Manager } from "../../core/aws/route53-manager.js";
+import type { DeploymentState } from "../../types/state.js";
+import type { DiscoveredResources } from "../../types/discovery.js";
 
 interface RemoveOptions {
   env?: string;
@@ -36,18 +33,18 @@ interface RemoveOptions {
 }
 
 export function createRemoveCommand(): Command {
-  const command = new Command('remove');
+  const command = new Command("remove");
 
   command
-    .description('Delete all deployed AWS resources')
-    .option('-e, --env <environment>', 'Environment name')
-    .option('-c, --config <path>', 'Config file path', 'scf.config.ts')
-    .option('-p, --profile <profile>', 'AWS profile name')
-    .option('-f, --force', 'Skip confirmation prompt')
-    .option('--keep-bucket', 'Keep S3 bucket (only delete files)')
-    .option('--keep-distribution', 'Keep CloudFront distribution')
-    .option('--keep-certificate', 'Keep ACM certificate')
-    .option('--keep-hosted-zone', 'Keep Route53 hosted zone')
+    .description("Delete all deployed AWS resources")
+    .option("-e, --env <environment>", "Environment name")
+    .option("-c, --config <path>", "Config file path", "scf.config.ts")
+    .option("-p, --profile <profile>", "AWS profile name")
+    .option("-f, --force", "Skip confirmation prompt")
+    .option("--keep-bucket", "Keep S3 bucket (only delete files)")
+    .option("--keep-distribution", "Keep CloudFront distribution")
+    .option("--keep-certificate", "Keep ACM certificate")
+    .option("--keep-hosted-zone", "Keep Route53 hosted zone")
     .action(async (options: RemoveOptions) => {
       try {
         await removeCommand(options);
@@ -64,7 +61,7 @@ export function createRemoveCommand(): Command {
 async function removeCommand(options: RemoveOptions): Promise<void> {
   const {
     env,
-    config: configPath = 'scf.config.ts',
+    config: configPath = "scf.config.ts",
     profile,
     force = false,
     keepBucket = false,
@@ -75,11 +72,11 @@ async function removeCommand(options: RemoveOptions): Promise<void> {
 
   // Header
   console.log();
-  console.log(chalk.bold.red('🗑️  SCF Resource Removal'));
+  console.log(chalk.bold.red("🗑️  SCF Resource Removal"));
   console.log();
 
   // Step 1: Load config
-  logger.info('Loading configuration...');
+  logger.info("Loading configuration...");
   const config = await loadConfig({
     configPath,
     env,
@@ -93,13 +90,13 @@ async function removeCommand(options: RemoveOptions): Promise<void> {
     config.credentials.profile = profile;
   }
 
-  logger.success('Configuration loaded');
+  logger.success("Configuration loaded");
   console.log();
 
   // Step 2: Get AWS credentials
-  logger.info('Verifying AWS credentials...');
+  logger.info("Verifying AWS credentials...");
   const credentials = await getCredentials(config);
-  logger.success('Credentials verified');
+  logger.success("Credentials verified");
   console.log();
 
   // Step 3: Try to load state, or discover resources if state doesn't exist
@@ -109,14 +106,14 @@ async function removeCommand(options: RemoveOptions): Promise<void> {
   const hasState = stateExists({ environment: env });
 
   if (hasState) {
-    logger.info('Loading deployment state...');
+    logger.info("Loading deployment state...");
     state = loadState({ environment: env });
-    logger.success('State file loaded');
+    logger.success("State file loaded");
   } else {
-    logger.warn('State file not found. Discovering resources from AWS...');
+    logger.warn("State file not found. Discovering resources from AWS...");
     console.log();
 
-    const targetEnv = env || 'default';
+    const targetEnv = env || "default";
     discovered = await discoverAllResources(config, config.app, targetEnv);
 
     if (!discovered.hasResources) {
@@ -124,18 +121,18 @@ async function removeCommand(options: RemoveOptions): Promise<void> {
         `No SCF-managed resources found for app "${config.app}" and environment "${targetEnv}"`
       );
       console.log();
-      logger.info('Nothing to remove.');
+      logger.info("Nothing to remove.");
       console.log();
       return;
     }
 
-    logger.success('Resources discovered from AWS tags');
+    logger.success("Resources discovered from AWS tags");
   }
 
   console.log();
 
   // Step 4: Display all resources that will be removed
-  console.log(chalk.bold('📋 Resources to be removed:'));
+  console.log(chalk.bold("📋 Resources to be removed:"));
   console.log();
 
   let hasS3 = false;
@@ -144,72 +141,88 @@ async function removeCommand(options: RemoveOptions): Promise<void> {
   let hasRoute53 = false;
 
   // S3 Bucket
-  const s3BucketName = state?.resources.s3?.bucketName || discovered?.s3?.bucketName;
+  const s3BucketName =
+    state?.resources.s3?.bucketName || discovered?.s3?.bucketName;
   const s3Region = state?.resources.s3?.region || discovered?.s3?.region;
   if (s3BucketName && !keepBucket) {
     hasS3 = true;
-    console.log(chalk.cyan('S3 Bucket:'));
-    console.log(`  ${chalk.gray('Bucket Name:')} ${s3BucketName}`);
-    console.log(`  ${chalk.gray('Region:')} ${s3Region || 'unknown'}`);
+    console.log(chalk.cyan("S3 Bucket:"));
+    console.log(`  ${chalk.gray("Bucket Name:")} ${s3BucketName}`);
+    console.log(`  ${chalk.gray("Region:")} ${s3Region || "unknown"}`);
     console.log();
   }
 
   // CloudFront Distribution
-  const cfDistributionId = state?.resources.cloudfront?.distributionId || discovered?.cloudfront?.distributionId;
-  const cfDomainName = state?.resources.cloudfront?.domainName || discovered?.cloudfront?.domainName;
+  const cfDistributionId =
+    state?.resources.cloudfront?.distributionId ||
+    discovered?.cloudfront?.distributionId;
+  const cfDomainName =
+    state?.resources.cloudfront?.domainName ||
+    discovered?.cloudfront?.domainName;
   if (cfDistributionId && !keepDistribution) {
     hasCloudFront = true;
-    console.log(chalk.cyan('CloudFront Distribution:'));
-    console.log(`  ${chalk.gray('Distribution ID:')} ${cfDistributionId}`);
-    console.log(`  ${chalk.gray('Domain Name:')} ${cfDomainName || 'unknown'}`);
+    console.log(chalk.cyan("CloudFront Distribution:"));
+    console.log(`  ${chalk.gray("Distribution ID:")} ${cfDistributionId}`);
+    console.log(`  ${chalk.gray("Domain Name:")} ${cfDomainName || "unknown"}`);
     console.log();
   }
 
   // ACM Certificate
-  const acmCertificateArn = state?.resources.acm?.certificateArn || discovered?.acm?.certificateArn;
-  const acmDomainName = state?.resources.acm?.domainName || discovered?.acm?.domainName;
+  const acmCertificateArn =
+    state?.resources.acm?.certificateArn || discovered?.acm?.certificateArn;
+  const acmDomainName =
+    state?.resources.acm?.domainName || discovered?.acm?.domainName;
   if (acmCertificateArn && !keepCertificate) {
     hasACM = true;
-    console.log(chalk.cyan('ACM Certificate:'));
-    console.log(`  ${chalk.gray('Certificate ARN:')} ${acmCertificateArn}`);
-    console.log(`  ${chalk.gray('Domain Name:')} ${acmDomainName || 'unknown'}`);
+    console.log(chalk.cyan("ACM Certificate:"));
+    console.log(`  ${chalk.gray("Certificate ARN:")} ${acmCertificateArn}`);
+    console.log(
+      `  ${chalk.gray("Domain Name:")} ${acmDomainName || "unknown"}`
+    );
     console.log();
   }
 
   // Route53 Hosted Zone
-  const route53ZoneId = state?.resources.route53?.hostedZoneId || discovered?.route53?.hostedZoneId;
-  const route53ZoneName = state?.resources.route53?.hostedZoneName || discovered?.route53?.hostedZoneName;
+  const route53ZoneId =
+    state?.resources.route53?.hostedZoneId || discovered?.route53?.hostedZoneId;
+  const route53ZoneName =
+    state?.resources.route53?.hostedZoneName ||
+    discovered?.route53?.hostedZoneName;
   if (route53ZoneId && !keepHostedZone) {
     hasRoute53 = true;
-    console.log(chalk.cyan('Route53 Hosted Zone:'));
-    console.log(`  ${chalk.gray('Zone ID:')} ${route53ZoneId}`);
-    console.log(`  ${chalk.gray('Zone Name:')} ${route53ZoneName || 'unknown'}`);
+    console.log(chalk.cyan("Route53 Hosted Zone:"));
+    console.log(`  ${chalk.gray("Zone ID:")} ${route53ZoneId}`);
+    console.log(
+      `  ${chalk.gray("Zone Name:")} ${route53ZoneName || "unknown"}`
+    );
     console.log();
   }
 
   // Check if there are any resources to remove
   if (!hasS3 && !hasCloudFront && !hasACM && !hasRoute53) {
-    logger.info('No resources to remove (all resources are being kept or not found).');
+    logger.info(
+      "No resources to remove (all resources are being kept or not found)."
+    );
     console.log();
     return;
   }
 
   // Step 5: Confirmation
   if (!force) {
-    console.log(chalk.yellow('⚠️  Warning: This action cannot be undone!'));
+    console.log(chalk.yellow("⚠️  Warning: This action cannot be undone!"));
     console.log();
 
     const { confirm } = await inquirer.prompt([
       {
-        type: 'confirm',
-        name: 'confirm',
-        message: 'Are you sure you want to delete these resources?',
+        type: "confirm",
+        name: "confirm",
+        message: "Are you sure you want to delete these resources?",
         default: false,
       },
     ]);
 
     if (!confirm) {
-      logger.info('Removal cancelled');
+      logger.info("Removal cancelled");
       return;
     }
 
@@ -220,7 +233,7 @@ async function removeCommand(options: RemoveOptions): Promise<void> {
   // Order: CloudFront → ACM → S3 → Route53
   // (CloudFront must be deleted before ACM certificate can be removed)
 
-  let deletionErrors: string[] = [];
+  const deletionErrors: string[] = [];
 
   // 6.1: Delete CloudFront Distribution
   if (hasCloudFront && cfDistributionId) {
@@ -281,21 +294,23 @@ async function removeCommand(options: RemoveOptions): Promise<void> {
   if (deletionErrors.length === 0 && hasState) {
     deleteState({ environment: env });
     console.log();
-    logger.success('State file deleted');
+    logger.success("State file deleted");
   }
 
   // Step 8: Summary
   console.log();
   if (deletionErrors.length > 0) {
-    console.log(chalk.yellow('⚠️  Some resources could not be deleted:'));
+    console.log(chalk.yellow("⚠️  Some resources could not be deleted:"));
     console.log();
     for (const error of deletionErrors) {
-      console.log(`  ${chalk.red('✗')} ${error}`);
+      console.log(`  ${chalk.red("✗")} ${error}`);
     }
     console.log();
-    logger.warn('Some resources may still exist. Please check AWS console and retry if needed.');
+    logger.warn(
+      "Some resources may still exist. Please check AWS console and retry if needed."
+    );
   } else {
-    logger.success('All resources removed successfully!');
+    logger.success("All resources removed successfully!");
   }
 
   console.log();

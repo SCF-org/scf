@@ -16,8 +16,8 @@ import {
   type DistributionConfig,
   type CreateDistributionCommandInput,
   type UpdateDistributionCommandInput,
-} from '@aws-sdk/client-cloudfront';
-import { STSClient, GetCallerIdentityCommand } from '@aws-sdk/client-sts';
+} from "@aws-sdk/client-cloudfront";
+import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
 
 /**
  * Distribution creation options
@@ -31,7 +31,7 @@ export interface CreateDistributionOptions {
     certificateArn?: string;
     aliases?: string[];
   };
-  priceClass?: 'PriceClass_100' | 'PriceClass_200' | 'PriceClass_All';
+  priceClass?: "PriceClass_100" | "PriceClass_200" | "PriceClass_All";
   defaultTTL?: number;
   maxTTL?: number;
   minTTL?: number;
@@ -55,13 +55,13 @@ export async function distributionExists(
   } catch (error: unknown) {
     if (
       error &&
-      typeof error === 'object' &&
-      ('name' in error && error.name === 'NoSuchDistribution' ||
-       '$metadata' in error &&
-       typeof error.$metadata === 'object' &&
-       error.$metadata !== null &&
-       'httpStatusCode' in error.$metadata &&
-       error.$metadata.httpStatusCode === 404)
+      typeof error === "object" &&
+      (("name" in error && error.name === "NoSuchDistribution") ||
+        ("$metadata" in error &&
+          typeof error.$metadata === "object" &&
+          error.$metadata !== null &&
+          "httpStatusCode" in error.$metadata &&
+          error.$metadata.httpStatusCode === 404))
     ) {
       return false;
     }
@@ -86,13 +86,13 @@ export async function getDistribution(
   } catch (error: unknown) {
     if (
       error &&
-      typeof error === 'object' &&
-      ('name' in error && error.name === 'NoSuchDistribution' ||
-       '$metadata' in error &&
-       typeof error.$metadata === 'object' &&
-       error.$metadata !== null &&
-       'httpStatusCode' in error.$metadata &&
-       error.$metadata.httpStatusCode === 404)
+      typeof error === "object" &&
+      (("name" in error && error.name === "NoSuchDistribution") ||
+        ("$metadata" in error &&
+          typeof error.$metadata === "object" &&
+          error.$metadata !== null &&
+          "httpStatusCode" in error.$metadata &&
+          error.$metadata.httpStatusCode === 404))
     ) {
       return null;
     }
@@ -105,7 +105,7 @@ export async function getDistribution(
  */
 function getS3OriginDomain(bucketName: string, region: string): string {
   // Use S3 website endpoint for proper index document handling
-  if (region === 'us-east-1') {
+  if (region === "us-east-1") {
     return `${bucketName}.s3-website-us-east-1.amazonaws.com`;
   }
   return `${bucketName}.s3-website.${region}.amazonaws.com`;
@@ -121,9 +121,9 @@ export async function createDistribution(
   const {
     s3BucketName,
     s3Region,
-    indexDocument = 'index.html',
+    indexDocument = "index.html",
     customDomain,
-    priceClass = 'PriceClass_100',
+    priceClass = "PriceClass_100",
     defaultTTL = 86400, // 1 day
     maxTTL = 31536000, // 1 year
     minTTL = 0,
@@ -147,10 +147,10 @@ export async function createDistribution(
           CustomOriginConfig: {
             HTTPPort: 80,
             HTTPSPort: 443,
-            OriginProtocolPolicy: 'http-only',
+            OriginProtocolPolicy: "http-only",
             OriginSslProtocols: {
               Quantity: 1,
-              Items: ['TLSv1.2'],
+              Items: ["TLSv1.2"],
             },
           },
         },
@@ -158,20 +158,20 @@ export async function createDistribution(
     },
     DefaultCacheBehavior: {
       TargetOriginId: `S3-${s3BucketName}`,
-      ViewerProtocolPolicy: 'redirect-to-https',
+      ViewerProtocolPolicy: "redirect-to-https",
       AllowedMethods: {
         Quantity: 2,
-        Items: ['GET', 'HEAD'],
+        Items: ["GET", "HEAD"],
         CachedMethods: {
           Quantity: 2,
-          Items: ['GET', 'HEAD'],
+          Items: ["GET", "HEAD"],
         },
       },
       Compress: true,
       ForwardedValues: {
         QueryString: false,
         Cookies: {
-          Forward: 'none',
+          Forward: "none",
         },
         Headers: {
           Quantity: 0,
@@ -198,8 +198,8 @@ export async function createDistribution(
 
     distributionConfig.ViewerCertificate = {
       ACMCertificateArn: customDomain.certificateArn,
-      SSLSupportMethod: 'sni-only',
-      MinimumProtocolVersion: 'TLSv1.2_2021',
+      SSLSupportMethod: "sni-only",
+      MinimumProtocolVersion: "TLSv1.2_2021",
     };
   } else {
     distributionConfig.ViewerCertificate = {
@@ -214,7 +214,7 @@ export async function createDistribution(
   const response = await client.send(new CreateDistributionCommand(command));
 
   if (!response.Distribution) {
-    throw new Error('Failed to create distribution: No distribution returned');
+    throw new Error("Failed to create distribution: No distribution returned");
   }
 
   return response.Distribution;
@@ -239,7 +239,7 @@ export async function updateDistribution(
   const etag = configResponse.ETag;
 
   if (!currentConfig || !etag) {
-    throw new Error('Failed to get distribution configuration');
+    throw new Error("Failed to get distribution configuration");
   }
 
   // Apply updates
@@ -248,7 +248,7 @@ export async function updateDistribution(
   }
 
   if (!currentConfig.DefaultCacheBehavior) {
-    throw new Error('Distribution configuration missing DefaultCacheBehavior');
+    throw new Error("Distribution configuration missing DefaultCacheBehavior");
   }
 
   if (updates.defaultTTL !== undefined) {
@@ -275,8 +275,8 @@ export async function updateDistribution(
 
     currentConfig.ViewerCertificate = {
       ACMCertificateArn: updates.customDomain.certificateArn,
-      SSLSupportMethod: 'sni-only',
-      MinimumProtocolVersion: 'TLSv1.2_2021',
+      SSLSupportMethod: "sni-only",
+      MinimumProtocolVersion: "TLSv1.2_2021",
     };
   }
 
@@ -289,7 +289,7 @@ export async function updateDistribution(
   const response = await client.send(new UpdateDistributionCommand(command));
 
   if (!response.Distribution) {
-    throw new Error('Failed to update distribution: No distribution returned');
+    throw new Error("Failed to update distribution: No distribution returned");
   }
 
   return response.Distribution;
@@ -326,7 +326,7 @@ export async function waitForDistributionDeployed(
  * Get distribution domain name
  */
 export function getDistributionDomainName(distribution: Distribution): string {
-  return distribution.DomainName || '';
+  return distribution.DomainName || "";
 }
 
 /**
@@ -334,7 +334,7 @@ export function getDistributionDomainName(distribution: Distribution): string {
  */
 export function getDistributionUrl(distribution: Distribution): string {
   const domainName = getDistributionDomainName(distribution);
-  return domainName ? `https://${domainName}` : '';
+  return domainName ? `https://${domainName}` : "";
 }
 
 /**
@@ -345,7 +345,7 @@ async function getAccountId(region: string): Promise<string> {
   const identity = await stsClient.send(new GetCallerIdentityCommand({}));
 
   if (!identity.Account) {
-    throw new Error('Failed to get AWS account ID');
+    throw new Error("Failed to get AWS account ID");
   }
 
   return identity.Account;
@@ -366,7 +366,7 @@ export async function tagDistributionForRecovery(
   distributionId: string,
   app: string,
   environment: string,
-  region: string = 'us-east-1'
+  region: string = "us-east-1"
 ): Promise<void> {
   try {
     const accountId = await getAccountId(region);
@@ -377,17 +377,17 @@ export async function tagDistributionForRecovery(
         Resource: distributionArn,
         Tags: {
           Items: [
-            { Key: 'scf:managed', Value: 'true' },
-            { Key: 'scf:app', Value: app },
-            { Key: 'scf:environment', Value: environment },
-            { Key: 'scf:tool', Value: 'scf-deploy' },
+            { Key: "scf:managed", Value: "true" },
+            { Key: "scf:app", Value: app },
+            { Key: "scf:environment", Value: environment },
+            { Key: "scf:tool", Value: "scf-deploy" },
           ],
         },
       })
     );
   } catch (error) {
     // Non-critical error, just log it
-    console.warn('Warning: Failed to tag CloudFront distribution for recovery');
+    console.warn("Warning: Failed to tag CloudFront distribution for recovery");
     if (error instanceof Error) {
       console.warn(`Reason: ${error.message}`);
     }
@@ -400,7 +400,7 @@ export async function tagDistributionForRecovery(
 export async function getDistributionTags(
   client: CloudFrontClient,
   distributionId: string,
-  region: string = 'us-east-1'
+  region: string = "us-east-1"
 ): Promise<Record<string, string>> {
   try {
     const accountId = await getAccountId(region);
@@ -421,7 +421,7 @@ export async function getDistributionTags(
       }
     }
     return tags;
-  } catch (error) {
+  } catch (_error) {
     // Return empty tags if we can't read them
     return {};
   }
@@ -435,12 +435,12 @@ export async function deleteCloudFrontDistribution(
   client: CloudFrontClient,
   distributionId: string
 ): Promise<void> {
-  const ora = (await import('ora')).default;
-  const spinner = ora('Deleting CloudFront distribution...').start();
+  const ora = (await import("ora")).default;
+  const spinner = ora("Deleting CloudFront distribution...").start();
 
   try {
     // Get distribution
-    spinner.text = 'Getting distribution details...';
+    spinner.text = "Getting distribution details...";
     const getDistResult = await client.send(
       new GetDistributionCommand({
         Id: distributionId,
@@ -448,8 +448,8 @@ export async function deleteCloudFrontDistribution(
     );
 
     // Wait if distribution is deploying
-    if (getDistResult.Distribution?.Status === 'InProgress') {
-      spinner.text = 'Waiting for distribution deployment to complete...';
+    if (getDistResult.Distribution?.Status === "InProgress") {
+      spinner.text = "Waiting for distribution deployment to complete...";
       await waitForDistributionDeployed(client, distributionId, {
         maxWaitTime: 1200,
         minDelay: 20,
@@ -458,7 +458,7 @@ export async function deleteCloudFrontDistribution(
     }
 
     // Get distribution config
-    spinner.text = 'Disabling distribution...';
+    spinner.text = "Disabling distribution...";
     const configResult = await client.send(
       new GetDistributionConfigCommand({
         Id: distributionId,
@@ -478,7 +478,7 @@ export async function deleteCloudFrontDistribution(
           })
         );
 
-        spinner.text = 'Waiting for distribution to be disabled...';
+        spinner.text = "Waiting for distribution to be disabled...";
         await waitForDistributionDeployed(client, distributionId, {
           maxWaitTime: 1200,
           minDelay: 20,
@@ -495,7 +495,7 @@ export async function deleteCloudFrontDistribution(
 
       // Delete distribution
       if (updatedConfigResult.ETag) {
-        spinner.text = 'Deleting distribution...';
+        spinner.text = "Deleting distribution...";
         await client.send(
           new DeleteDistributionCommand({
             Id: distributionId,
@@ -503,18 +503,25 @@ export async function deleteCloudFrontDistribution(
           })
         );
 
-        spinner.succeed('CloudFront distribution deleted successfully');
+        spinner.succeed("CloudFront distribution deleted successfully");
       }
     }
   } catch (error) {
-    spinner.fail('Failed to delete CloudFront distribution');
+    spinner.fail("Failed to delete CloudFront distribution");
 
-    if (error && typeof error === 'object' && 'name' in error && error.name === 'NoSuchDistribution') {
-      throw new Error('Distribution not found (may have been already deleted)');
+    if (
+      error &&
+      typeof error === "object" &&
+      "name" in error &&
+      error.name === "NoSuchDistribution"
+    ) {
+      throw new Error("Distribution not found (may have been already deleted)");
     }
 
     throw new Error(
-      `CloudFront distribution deletion failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      `CloudFront distribution deletion failed: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`
     );
   }
 }

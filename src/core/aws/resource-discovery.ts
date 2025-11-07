@@ -3,33 +3,33 @@
  * Discovers SCF-managed AWS resources using tags
  */
 
-import { S3Client, ListBucketsCommand } from '@aws-sdk/client-s3';
+import { S3Client, ListBucketsCommand } from "@aws-sdk/client-s3";
 import {
   CloudFrontClient,
   ListDistributionsCommand,
-} from '@aws-sdk/client-cloudfront';
+} from "@aws-sdk/client-cloudfront";
 import {
   ACMClient,
   ListCertificatesCommand,
   CertificateStatus,
-} from '@aws-sdk/client-acm';
+} from "@aws-sdk/client-acm";
 import {
   Route53Client,
   ListHostedZonesCommand,
   ListTagsForResourceCommand as ListHostedZoneTagsCommand,
-} from '@aws-sdk/client-route-53';
-import { STSClient, GetCallerIdentityCommand } from '@aws-sdk/client-sts';
+} from "@aws-sdk/client-route-53";
+import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
 import type {
   DiscoveredS3Resource,
   DiscoveredCloudFrontResource,
   DiscoveredACMResource,
   DiscoveredRoute53Resource,
   DiscoveredResources,
-} from '../../types/discovery.js';
-import { getBucketTags } from './s3-bucket.js';
-import { getDistributionTags } from './cloudfront-distribution.js';
-import type { SCFConfig } from '../../types/config.js';
-import { createS3Client, createCloudFrontClient } from './client.js';
+} from "../../types/discovery.js";
+import { getBucketTags } from "./s3-bucket.js";
+import { getDistributionTags } from "./cloudfront-distribution.js";
+import type { SCFConfig } from "../../types/config.js";
+import { createS3Client, createCloudFrontClient } from "./client.js";
 
 /**
  * Get AWS account ID
@@ -39,7 +39,7 @@ async function getAccountId(region: string): Promise<string> {
   const identity = await stsClient.send(new GetCallerIdentityCommand({}));
 
   if (!identity.Account) {
-    throw new Error('Failed to get AWS account ID');
+    throw new Error("Failed to get AWS account ID");
   }
 
   return identity.Account;
@@ -69,26 +69,26 @@ export async function discoverS3Buckets(
         const tags = await getBucketTags(client, bucket.Name);
 
         // Check if it's SCF-managed
-        if (tags['scf:managed'] !== 'true') {
+        if (tags["scf:managed"] !== "true") {
           continue;
         }
 
         // Filter by app and environment if specified
-        if (app && tags['scf:app'] !== app) {
+        if (app && tags["scf:app"] !== app) {
           continue;
         }
-        if (environment && tags['scf:environment'] !== environment) {
+        if (environment && tags["scf:environment"] !== environment) {
           continue;
         }
 
         // Get bucket region from location
-        const region = tags['scf:region'] || 'us-east-1';
+        const region = tags["scf:region"] || "us-east-1";
 
         discovered.push({
           bucketName: bucket.Name,
           region,
-          app: tags['scf:app'] || 'unknown',
-          environment: tags['scf:environment'] || 'default',
+          app: tags["scf:app"] || "unknown",
+          environment: tags["scf:environment"] || "default",
           tags,
         });
       } catch {
@@ -97,7 +97,7 @@ export async function discoverS3Buckets(
       }
     }
   } catch (error) {
-    console.warn('Warning: Failed to discover S3 buckets:', error);
+    console.warn("Warning: Failed to discover S3 buckets:", error);
   }
 
   return discovered;
@@ -135,15 +135,15 @@ export async function discoverCloudFrontDistributions(
         const tags = await getDistributionTags(client, dist.Id, region);
 
         // Check if it's SCF-managed
-        if (tags['scf:managed'] !== 'true') {
+        if (tags["scf:managed"] !== "true") {
           continue;
         }
 
         // Filter by app and environment if specified
-        if (app && tags['scf:app'] !== app) {
+        if (app && tags["scf:app"] !== app) {
           continue;
         }
-        if (environment && tags['scf:environment'] !== environment) {
+        if (environment && tags["scf:environment"] !== environment) {
           continue;
         }
 
@@ -153,9 +153,9 @@ export async function discoverCloudFrontDistributions(
           distributionId: dist.Id,
           distributionArn,
           domainName: dist.DomainName,
-          status: dist.Status || 'Unknown',
-          app: tags['scf:app'] || 'unknown',
-          environment: tags['scf:environment'] || 'default',
+          status: dist.Status || "Unknown",
+          app: tags["scf:app"] || "unknown",
+          environment: tags["scf:environment"] || "default",
           tags,
         });
       } catch {
@@ -164,7 +164,10 @@ export async function discoverCloudFrontDistributions(
       }
     }
   } catch (error) {
-    console.warn('Warning: Failed to discover CloudFront distributions:', error);
+    console.warn(
+      "Warning: Failed to discover CloudFront distributions:",
+      error
+    );
   }
 
   return discovered;
@@ -182,11 +185,14 @@ export async function discoverACMCertificates(
 
   try {
     // ACM certificates for CloudFront must be in us-east-1
-    const acmClient = new ACMClient({ region: 'us-east-1' });
+    const acmClient = new ACMClient({ region: "us-east-1" });
 
     const { CertificateSummaryList } = await acmClient.send(
       new ListCertificatesCommand({
-        CertificateStatuses: [CertificateStatus.ISSUED, CertificateStatus.PENDING_VALIDATION],
+        CertificateStatuses: [
+          CertificateStatus.ISSUED,
+          CertificateStatus.PENDING_VALIDATION,
+        ],
       })
     );
 
@@ -200,7 +206,9 @@ export async function discoverACMCertificates(
       try {
         // Note: ACM ListTagsForCertificate requires the certificate ARN
         const { Tags } = await acmClient.send(
-          new (await import('@aws-sdk/client-acm')).ListTagsForCertificateCommand({
+          new (
+            await import("@aws-sdk/client-acm")
+          ).ListTagsForCertificateCommand({
             CertificateArn: cert.CertificateArn,
           })
         );
@@ -215,24 +223,28 @@ export async function discoverACMCertificates(
         }
 
         // Check if it's SCF-managed
-        if (tags['scf:managed'] !== 'true') {
+        if (tags["scf:managed"] !== "true") {
           continue;
         }
 
         // Filter by app and environment if specified
-        if (app && tags['scf:app'] && tags['scf:app'] !== app) {
+        if (app && tags["scf:app"] && tags["scf:app"] !== app) {
           continue;
         }
-        if (environment && tags['scf:environment'] && tags['scf:environment'] !== environment) {
+        if (
+          environment &&
+          tags["scf:environment"] &&
+          tags["scf:environment"] !== environment
+        ) {
           continue;
         }
 
         discovered.push({
           certificateArn: cert.CertificateArn,
           domainName: cert.DomainName,
-          status: cert.Status || 'UNKNOWN',
-          app: tags['scf:app'],
-          environment: tags['scf:environment'],
+          status: cert.Status || "UNKNOWN",
+          app: tags["scf:app"],
+          environment: tags["scf:environment"],
           tags,
         });
       } catch {
@@ -241,7 +253,7 @@ export async function discoverACMCertificates(
       }
     }
   } catch (error) {
-    console.warn('Warning: Failed to discover ACM certificates:', error);
+    console.warn("Warning: Failed to discover ACM certificates:", error);
   }
 
   return discovered;
@@ -272,17 +284,23 @@ export async function discoverRoute53HostedZones(
       if (!zone.Id || !zone.Name) continue;
 
       try {
-        const zoneId = zone.Id.replace('/hostedzone/', '');
+        const zoneId = zone.Id.replace("/hostedzone/", "");
         const response = await route53Client.send(
           new ListHostedZoneTagsCommand({
-            ResourceType: 'hostedzone',
+            ResourceType: "hostedzone",
             ResourceId: zoneId,
           })
         );
 
         const tags: Record<string, string> = {};
         // Response might have Tags or ResourceTagSet
-        const tagList = (response as any).Tags || (response as any).ResourceTagSet?.Tags;
+        const tagList =
+          (response as unknown as { Tags?: unknown }).Tags ||
+          (
+            response as unknown as {
+              ResourceTagSet?: { Tags?: unknown };
+            }
+          ).ResourceTagSet?.Tags;
         if (tagList) {
           for (const tag of tagList) {
             if (tag.Key && tag.Value) {
@@ -292,15 +310,19 @@ export async function discoverRoute53HostedZones(
         }
 
         // Check if it's SCF-managed
-        if (tags['scf:managed'] !== 'true') {
+        if (tags["scf:managed"] !== "true") {
           continue;
         }
 
         // Filter by app and environment if specified
-        if (app && tags['scf:app'] && tags['scf:app'] !== app) {
+        if (app && tags["scf:app"] && tags["scf:app"] !== app) {
           continue;
         }
-        if (environment && tags['scf:environment'] && tags['scf:environment'] !== environment) {
+        if (
+          environment &&
+          tags["scf:environment"] &&
+          tags["scf:environment"] !== environment
+        ) {
           continue;
         }
 
@@ -316,8 +338,8 @@ export async function discoverRoute53HostedZones(
           hostedZoneId: zone.Id,
           hostedZoneName: zone.Name,
           nameServers,
-          app: tags['scf:app'],
-          environment: tags['scf:environment'],
+          app: tags["scf:app"],
+          environment: tags["scf:environment"],
           tags,
         });
       } catch {
@@ -326,7 +348,7 @@ export async function discoverRoute53HostedZones(
       }
     }
   } catch (error) {
-    console.warn('Warning: Failed to discover Route53 hosted zones:', error);
+    console.warn("Warning: Failed to discover Route53 hosted zones:", error);
   }
 
   return discovered;
@@ -341,7 +363,7 @@ export async function discoverAllResources(
   environment?: string
 ): Promise<DiscoveredResources> {
   const targetApp = app || config.app;
-  const targetEnv = environment || 'default';
+  const targetEnv = environment || "default";
 
   // Create clients
   const s3Client = createS3Client(config);
@@ -351,7 +373,12 @@ export async function discoverAllResources(
   const [s3Buckets, cfDistributions, acmCertificates, route53Zones] =
     await Promise.all([
       discoverS3Buckets(s3Client, targetApp, targetEnv),
-      discoverCloudFrontDistributions(cfClient, config.region, targetApp, targetEnv),
+      discoverCloudFrontDistributions(
+        cfClient,
+        config.region,
+        targetApp,
+        targetEnv
+      ),
       discoverACMCertificates(config.region, targetApp, targetEnv),
       discoverRoute53HostedZones(config.region, targetApp, targetEnv),
     ]);
@@ -377,9 +404,7 @@ export async function discoverAllResources(
 /**
  * Discover all SCF-managed resources (all apps/environments)
  */
-export async function discoverAllSCFResources(
-  config: SCFConfig
-): Promise<{
+export async function discoverAllSCFResources(config: SCFConfig): Promise<{
   s3: DiscoveredS3Resource[];
   cloudfront: DiscoveredCloudFrontResource[];
   acm: DiscoveredACMResource[];

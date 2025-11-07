@@ -68,11 +68,11 @@ export class Route53Manager {
     ).start();
 
     // CloudFront global hosted zone ID
-    const CLOUDFRONT_ZONE_ID = 'Z2FDTNDATAQYW2';
+    const CLOUDFRONT_ZONE_ID = "Z2FDTNDATAQYW2";
 
     try {
-      const fqdn = domain.endsWith('.') ? domain : `${domain}.`;
-      const cfDomain = cloudfrontDomain.endsWith('.')
+      const fqdn = domain.endsWith(".") ? domain : `${domain}.`;
+      const cfDomain = cloudfrontDomain.endsWith(".")
         ? cloudfrontDomain
         : `${cloudfrontDomain}.`;
 
@@ -101,9 +101,11 @@ export class Route53Manager {
 
       spinner.succeed(`Created A/AAAA Alias records for ${domain}`);
     } catch (error) {
-      spinner.fail('Failed to create CloudFront Alias records');
+      spinner.fail("Failed to create CloudFront Alias records");
       throw new Error(
-        `Alias record creation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Alias record creation failed: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
       );
     }
   }
@@ -164,29 +166,29 @@ export class Route53Manager {
       // Add tags to the hosted zone
       try {
         const tags = [
-          { Key: 'scf:managed', Value: 'true' },
-          { Key: 'scf:tool', Value: 'scf-deploy' },
-          { Key: 'scf:domain', Value: domain },
+          { Key: "scf:managed", Value: "true" },
+          { Key: "scf:tool", Value: "scf-deploy" },
+          { Key: "scf:domain", Value: domain },
         ];
 
         // Add app and environment tags if provided
         if (app) {
-          tags.push({ Key: 'scf:app', Value: app });
+          tags.push({ Key: "scf:app", Value: app });
         }
         if (environment) {
-          tags.push({ Key: 'scf:environment', Value: environment });
+          tags.push({ Key: "scf:environment", Value: environment });
         }
 
         await this.client.send(
           new ChangeTagsForResourceCommand({
-            ResourceType: 'hostedzone',
-            ResourceId: HostedZone.Id.replace('/hostedzone/', ''),
+            ResourceType: "hostedzone",
+            ResourceId: HostedZone.Id.replace("/hostedzone/", ""),
             AddTags: tags,
           })
         );
-      } catch (tagError) {
+      } catch (_tagError) {
         // Non-critical error, just log it
-        console.warn('Warning: Failed to add tags to hosted zone');
+        console.warn("Warning: Failed to add tags to hosted zone");
       }
 
       spinner.succeed(`Hosted zone created: ${HostedZone.Id || zoneName}`);
@@ -453,7 +455,7 @@ export class Route53Manager {
    * This is required before deleting the hosted zone
    */
   private async deleteAllRecords(hostedZoneId: string): Promise<void> {
-    const spinner = ora('Deleting DNS records...').start();
+    const spinner = ora("Deleting DNS records...").start();
 
     try {
       const { ResourceRecordSets } = await this.client.send(
@@ -463,7 +465,7 @@ export class Route53Manager {
       );
 
       if (!ResourceRecordSets || ResourceRecordSets.length === 0) {
-        spinner.succeed('No records to delete');
+        spinner.succeed("No records to delete");
         return;
       }
 
@@ -473,7 +475,7 @@ export class Route53Manager {
       );
 
       if (recordsToDelete.length === 0) {
-        spinner.succeed('No deletable records found');
+        spinner.succeed("No deletable records found");
         return;
       }
 
@@ -487,7 +489,7 @@ export class Route53Manager {
         new ChangeResourceRecordSetsCommand({
           HostedZoneId: hostedZoneId,
           ChangeBatch: {
-            Comment: 'Deleting all records before zone deletion',
+            Comment: "Deleting all records before zone deletion",
             Changes: changes,
           },
         })
@@ -495,10 +497,10 @@ export class Route53Manager {
 
       spinner.succeed(`Deleted ${recordsToDelete.length} DNS record(s)`);
     } catch (error) {
-      spinner.fail('Failed to delete DNS records');
+      spinner.fail("Failed to delete DNS records");
       throw new Error(
         `DNS record deletion failed: ${
-          error instanceof Error ? error.message : 'Unknown error'
+          error instanceof Error ? error.message : "Unknown error"
         }`
       );
     }
@@ -509,40 +511,40 @@ export class Route53Manager {
    * Note: All records except NS and SOA must be deleted first
    */
   async deleteHostedZone(hostedZoneId: string): Promise<void> {
-    const spinner = ora('Deleting Route53 hosted zone...').start();
+    const spinner = ora("Deleting Route53 hosted zone...").start();
 
     try {
       const id = this.extractHostedZoneId(hostedZoneId);
 
       // First, delete all non-NS/SOA records
-      spinner.text = 'Preparing hosted zone for deletion...';
+      spinner.text = "Preparing hosted zone for deletion...";
       await this.deleteAllRecords(id);
 
       // Now delete the hosted zone
-      spinner.text = 'Deleting Route53 hosted zone...';
+      spinner.text = "Deleting Route53 hosted zone...";
       await this.client.send(
         new DeleteHostedZoneCommand({
           Id: id,
         })
       );
 
-      spinner.succeed('Route53 hosted zone deleted successfully');
+      spinner.succeed("Route53 hosted zone deleted successfully");
     } catch (error) {
-      spinner.fail('Failed to delete Route53 hosted zone');
+      spinner.fail("Failed to delete Route53 hosted zone");
 
       // Check for common errors
       if (error instanceof Error) {
-        if (error.message.includes('not empty')) {
+        if (error.message.includes("not empty")) {
           throw new Error(
-            'Hosted zone still has records that cannot be deleted.\n' +
-            'Please manually remove all records except NS and SOA records, then retry.'
+            "Hosted zone still has records that cannot be deleted.\n" +
+              "Please manually remove all records except NS and SOA records, then retry."
           );
         }
       }
 
       throw new Error(
         `Route53 hosted zone deletion failed: ${
-          error instanceof Error ? error.message : 'Unknown error'
+          error instanceof Error ? error.message : "Unknown error"
         }`
       );
     }
