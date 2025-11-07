@@ -10,6 +10,7 @@ import {
   CreateHostedZoneCommand,
   type CreateHostedZoneRequest,
   GetHostedZoneCommand,
+  ChangeTagsForResourceCommand,
   type HostedZone,
   type Change,
   ChangeAction,
@@ -124,7 +125,11 @@ export class Route53Manager {
    * Create a public hosted zone for a domain (if it does not already exist)
    * Returns the created hosted zone object
    */
-  private async createHostedZone(domain: string): Promise<HostedZone> {
+  private async createHostedZone(
+    domain: string,
+    app?: string,
+    environment?: string
+  ): Promise<HostedZone> {
     // Ensure trailing dot per Route53 expectation
     const zoneName = domain.endsWith(".") ? domain : `${domain}.`;
 
@@ -150,8 +155,36 @@ export class Route53Manager {
         new CreateHostedZoneCommand(input)
       );
 
-      if (!HostedZone) {
+      if (!HostedZone || !HostedZone.Id) {
         throw new Error("CreateHostedZone returned no HostedZone");
+      }
+
+      // Add tags to the hosted zone
+      try {
+        const tags = [
+          { Key: 'scf:managed', Value: 'true' },
+          { Key: 'scf:tool', Value: 'scf-deploy' },
+          { Key: 'scf:domain', Value: domain },
+        ];
+
+        // Add app and environment tags if provided
+        if (app) {
+          tags.push({ Key: 'scf:app', Value: app });
+        }
+        if (environment) {
+          tags.push({ Key: 'scf:environment', Value: environment });
+        }
+
+        await this.client.send(
+          new ChangeTagsForResourceCommand({
+            ResourceType: 'hostedzone',
+            ResourceId: HostedZone.Id.replace('/hostedzone/', ''),
+            AddTags: tags,
+          })
+        );
+      } catch (tagError) {
+        // Non-critical error, just log it
+        console.warn('Warning: Failed to add tags to hosted zone');
       }
 
       spinner.succeed(`Hosted zone created: ${HostedZone.Id || zoneName}`);
@@ -376,7 +409,11 @@ export class Route53Manager {
    * Ensure that hosted zone exists and is accessible.
    * If not found, automatically creates a public hosted zone for the domain.
    */
-  async validateHostedZone(domain: string): Promise<string> {
+  async validateHostedZone(
+    domain: string,
+    app?: string,
+    environment?: string
+  ): Promise<string> {
     let zone = await this.findHostedZone(domain);
 
     if (!zone) {
@@ -390,7 +427,7 @@ export class Route53Manager {
       );
       console.log();
 
-      zone = await this.createHostedZone(domain);
+      zone = await this.createHostedZone(domain, app, environment);
     }
 
     if (!zone.Id) {

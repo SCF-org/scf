@@ -15,6 +15,7 @@ import {
   updateDistribution,
   waitForDistributionDeployed,
   getDistributionUrl,
+  tagDistributionForRecovery,
   type CreateDistributionOptions,
 } from "./cloudfront-distribution.js";
 import { invalidateCache, invalidateAll } from "./cloudfront-invalidation.js";
@@ -130,7 +131,11 @@ export async function deployToCloudFront(
       // Step 0-1: Validate Route53 hosted zone exists
       // Detect whether hosted zone is going to be created
       const existingZone = await route53Manager.findHostedZone(domainName);
-      const hostedZoneId = await route53Manager.validateHostedZone(domainName);
+      const hostedZoneId = await route53Manager.validateHostedZone(
+        domainName,
+        config.app,
+        environment || 'default'
+      );
       const cleanZoneId = route53Manager.extractHostedZoneId(hostedZoneId);
       cleanZoneIdForError = cleanZoneId;
       hostedZoneCreated = !existingZone;
@@ -163,7 +168,9 @@ export async function deployToCloudFront(
         );
         certificateArn = await acmManager.requestCertificate(
           domainName,
-          aliases
+          aliases,
+          config.app,
+          environment || 'default'
         );
         console.log(
           chalk.green("✓"),
@@ -349,6 +356,15 @@ export async function deployToCloudFront(
           updateOptions
         );
 
+        // Sync tags after update
+        await tagDistributionForRecovery(
+          cfClient,
+          distributionId,
+          config.app,
+          environment || 'default',
+          config.region
+        );
+
         if (spinner) {
           spinner.succeed("CloudFront distribution updated");
         }
@@ -384,6 +400,15 @@ export async function deployToCloudFront(
     }
     distributionId = distribution.Id;
     isNewDistribution = true;
+
+    // Tag distribution for state recovery
+    await tagDistributionForRecovery(
+      cfClient,
+      distributionId,
+      config.app,
+      environment || 'default',
+      config.region
+    );
 
     if (spinner) {
       spinner.succeed(
@@ -512,7 +537,11 @@ export async function deployToCloudFront(
       const hostedZoneId = cleanZoneIdForError
         ? cleanZoneIdForError
         : route53Manager.extractHostedZoneId(
-            await route53Manager.validateHostedZone(cloudFrontConfig.customDomain.domainName)
+            await route53Manager.validateHostedZone(
+              cloudFrontConfig.customDomain.domainName,
+              config.app,
+              environment || 'default'
+            )
           );
 
       // Create alias for primary domain
@@ -554,7 +583,11 @@ export async function deployToCloudFront(
         const hostedZoneId = cleanZoneIdForError
           ? cleanZoneIdForError
           : route53Manager.extractHostedZoneId(
-              await route53Manager.validateHostedZone(cloudFrontConfig.customDomain.domainName)
+              await route53Manager.validateHostedZone(
+                cloudFrontConfig.customDomain.domainName,
+                config.app,
+                environment || 'default'
+              )
             );
         const ns = await route53Manager.getNameServers(hostedZoneId);
         console.log();

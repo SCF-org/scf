@@ -8,6 +8,8 @@ import type {
   DeploymentState,
   S3ResourceState,
   CloudFrontResourceState,
+  ACMResourceState,
+  Route53ResourceState,
   ResourcesState,
 } from '../../types/state.js';
 
@@ -302,5 +304,131 @@ export function validateResourceState(state: DeploymentState): {
   return {
     valid: errors.length === 0,
     errors,
+  };
+}
+
+/**
+ * Update ACM resource state
+ */
+export function updateACMResource(
+  state: DeploymentState,
+  resource: ACMResourceState
+): DeploymentState {
+  return {
+    ...state,
+    resources: {
+      ...state.resources,
+      acm: resource,
+    },
+  };
+}
+
+/**
+ * Update Route53 resource state
+ */
+export function updateRoute53Resource(
+  state: DeploymentState,
+  resource: Route53ResourceState
+): DeploymentState {
+  return {
+    ...state,
+    resources: {
+      ...state.resources,
+      route53: resource,
+    },
+  };
+}
+
+/**
+ * Get ACM resource state
+ */
+export function getACMResource(
+  state: DeploymentState
+): ACMResourceState | undefined {
+  return state.resources.acm;
+}
+
+/**
+ * Get Route53 resource state
+ */
+export function getRoute53Resource(
+  state: DeploymentState
+): Route53ResourceState | undefined {
+  return state.resources.route53;
+}
+
+/**
+ * Check if ACM resource exists in state
+ */
+export function hasACMResource(state: DeploymentState): boolean {
+  return !!state.resources.acm;
+}
+
+/**
+ * Check if Route53 resource exists in state
+ */
+export function hasRoute53Resource(state: DeploymentState): boolean {
+  return !!state.resources.route53;
+}
+
+/**
+ * Remove ACM resource from state
+ */
+export function removeACMResource(state: DeploymentState): DeploymentState {
+  const newResources = { ...state.resources };
+  delete newResources.acm;
+
+  return {
+    ...state,
+    resources: newResources,
+  };
+}
+
+/**
+ * Remove Route53 resource from state
+ */
+export function removeRoute53Resource(state: DeploymentState): DeploymentState {
+  const newResources = { ...state.resources };
+  delete newResources.route53;
+
+  return {
+    ...state,
+    resources: newResources,
+  };
+}
+
+/**
+ * Create ACM resource state
+ */
+export function createACMResourceState(
+  certificateArn: string,
+  domainName: string,
+  status: string,
+  alternativeNames?: string[],
+  tags?: Record<string, string>
+): ACMResourceState {
+  return {
+    certificateArn,
+    domainName,
+    status,
+    alternativeNames,
+    tags,
+  };
+}
+
+/**
+ * Create Route53 resource state
+ */
+export function createRoute53ResourceState(
+  hostedZoneId: string,
+  hostedZoneName: string,
+  nameServers: string[],
+  tags?: Record<string, string>
+): Route53ResourceState {
+  return {
+    hostedZoneId,
+    hostedZoneName,
+    nameServers,
+    tags,
   };
 }

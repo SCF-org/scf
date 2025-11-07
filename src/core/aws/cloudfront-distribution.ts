@@ -9,11 +9,14 @@ import {
   UpdateDistributionCommand,
   GetDistributionConfigCommand,
   waitUntilDistributionDeployed,
+  TagResourceCommand,
+  ListTagsForResourceCommand,
   type Distribution,
   type DistributionConfig,
   type CreateDistributionCommandInput,
   type UpdateDistributionCommandInput,
 } from '@aws-sdk/client-cloudfront';
+import { STSClient, GetCallerIdentityCommand } from '@aws-sdk/client-sts';
 
 /**
  * Distribution creation options
@@ -331,4 +334,94 @@ export function getDistributionDomainName(distribution: Distribution): string {
 export function getDistributionUrl(distribution: Distribution): string {
   const domainName = getDistributionDomainName(distribution);
   return domainName ? `https://${domainName}` : '';
+}
+
+/**
+ * Get AWS account ID from STS
+ */
+async function getAccountId(region: string): Promise<string> {
+  const stsClient = new STSClient({ region });
+  const identity = await stsClient.send(new GetCallerIdentityCommand({}));
+
+  if (!identity.Account) {
+    throw new Error('Failed to get AWS account ID');
+  }
+
+  return identity.Account;
+}
+
+/**
+ * Get distribution ARN
+ */
+function getDistributionArn(accountId: string, distributionId: string): string {
+  return `arn:aws:cloudfront::${accountId}:distribution/${distributionId}`;
+}
+
+/**
+ * Tag distribution for state recovery
+ */
+export async function tagDistributionForRecovery(
+  client: CloudFrontClient,
+  distributionId: string,
+  app: string,
+  environment: string,
+  region: string = 'us-east-1'
+): Promise<void> {
+  try {
+    const accountId = await getAccountId(region);
+    const distributionArn = getDistributionArn(accountId, distributionId);
+
+    await client.send(
+      new TagResourceCommand({
+        Resource: distributionArn,
+        Tags: {
+          Items: [
+            { Key: 'scf:managed', Value: 'true' },
+            { Key: 'scf:app', Value: app },
+            { Key: 'scf:environment', Value: environment },
+            { Key: 'scf:tool', Value: 'scf-deploy' },
+          ],
+        },
+      })
+    );
+  } catch (error) {
+    // Non-critical error, just log it
+    console.warn('Warning: Failed to tag CloudFront distribution for recovery');
+    if (error instanceof Error) {
+      console.warn(`Reason: ${error.message}`);
+    }
+  }
+}
+
+/**
+ * Get distribution tags
+ */
+export async function getDistributionTags(
+  client: CloudFrontClient,
+  distributionId: string,
+  region: string = 'us-east-1'
+): Promise<Record<string, string>> {
+  try {
+    const accountId = await getAccountId(region);
+    const distributionArn = getDistributionArn(accountId, distributionId);
+
+    const result = await client.send(
+      new ListTagsForResourceCommand({
+        Resource: distributionArn,
+      })
+    );
+
+    const tags: Record<string, string> = {};
+    if (result.Tags && result.Tags.Items) {
+      for (const tag of result.Tags.Items) {
+        if (tag.Key && tag.Value) {
+          tags[tag.Key] = tag.Value;
+        }
+      }
+    }
+    return tags;
+  } catch (error) {
+    // Return empty tags if we can't read them
+    return {};
+  }
 }

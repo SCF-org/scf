@@ -8,8 +8,6 @@ import inquirer from 'inquirer';
 import * as logger from '../utils/logger.js';
 import { loadConfig } from '../../core/config/index.js';
 import { getCredentials } from '../../core/aws/index.js';
-import { createS3Client, createCloudFrontClient } from '../../core/aws/client.js';
-import { getBucketTags } from '../../core/aws/s3-bucket.js';
 import {
   saveState,
   stateExists,
@@ -17,21 +15,14 @@ import {
   updateS3Resource,
   updateCloudFrontResource,
 } from '../../core/state/index.js';
-import { ListBucketsCommand } from '@aws-sdk/client-s3';
-import { ListDistributionsCommand } from '@aws-sdk/client-cloudfront';
+import { discoverAllResources, discoverAllSCFResources } from '../../core/aws/resource-discovery.js';
 
 interface RecoverOptions {
   env?: string;
   config?: string;
   profile?: string;
   force?: boolean;
-}
-
-interface RecoveredResource {
-  type: 's3' | 'cloudfront';
-  id: string;
-  app: string;
-  environment: string;
+  all?: boolean;
 }
 
 export function createRecoverCommand(): Command {
@@ -43,6 +34,7 @@ export function createRecoverCommand(): Command {
     .option('-c, --config <path>', 'Config file path', 'scf.config.ts')
     .option('-p, --profile <profile>', 'AWS profile name')
     .option('-f, --force', 'Overwrite existing state file')
+    .option('-a, --all', 'Show all SCF-managed resources')
     .action(async (options: RecoverOptions) => {
       try {
         await recoverCommand(options);
@@ -62,21 +54,13 @@ async function recoverCommand(options: RecoverOptions): Promise<void> {
     config: configPath = 'scf.config.ts',
     profile,
     force = false,
+    all = false,
   } = options;
 
   // Header
   console.log();
   console.log(chalk.bold.yellow('🔄 SCF State Recovery'));
   console.log();
-
-  // Check if state already exists
-  if (!force && stateExists({ environment: env })) {
-    logger.warn(`State file already exists for environment: ${env || 'default'}`);
-    console.log();
-    logger.info('Use --force to overwrite the existing state file');
-    console.log();
-    return;
-  }
 
   // Step 1: Load config
   logger.info('Loading configuration...');
@@ -102,130 +86,140 @@ async function recoverCommand(options: RecoverOptions): Promise<void> {
   logger.success('Credentials verified');
   console.log();
 
-  // Step 3: Search for SCF-managed resources
-  logger.info('Searching for SCF-managed resources...');
+  // Step 3: Discover resources
+  logger.info('Discovering SCF-managed resources...');
   console.log();
 
-  const s3Client = createS3Client(config);
-  const cfClient = createCloudFrontClient(config);
+  if (all) {
+    // Show all SCF resources
+    const allResources = await discoverAllSCFResources(config);
 
-  const resources: RecoveredResource[] = [];
-
-  // Search S3 buckets
-  try {
-    const bucketsResult = await s3Client.send(new ListBucketsCommand({}));
-
-    if (bucketsResult.Buckets) {
-      for (const bucket of bucketsResult.Buckets) {
-        if (!bucket.Name) continue;
-
-        try {
-          const tags = await getBucketTags(s3Client, bucket.Name);
-
-          if (tags['scf:managed'] === 'true') {
-            resources.push({
-              type: 's3',
-              id: bucket.Name,
-              app: tags['scf:app'] || 'unknown',
-              environment: tags['scf:environment'] || 'default',
-            });
-
-            console.log(
-              `${chalk.green('✓')} Found S3 bucket: ${chalk.cyan(bucket.Name)}`
-            );
-            console.log(
-              `  ${chalk.gray(`App: ${tags['scf:app'] || 'unknown'}, Env: ${tags['scf:environment'] || 'default'}`)}`
-            );
-          }
-        } catch {
-          // Skip buckets we can't access
-          continue;
-        }
-      }
-    }
-  } catch {
-    logger.warn('Failed to list S3 buckets (permission denied or error)');
-  }
-
-  // Search CloudFront distributions
-  try {
-    const distributionsResult = await cfClient.send(
-      new ListDistributionsCommand({})
-    );
-
-    if (
-      distributionsResult.DistributionList &&
-      distributionsResult.DistributionList.Items
-    ) {
-      for (const dist of distributionsResult.DistributionList.Items) {
-        if (!dist.Id) continue;
-
-        // Check if distribution origin matches any found S3 bucket
-        const s3Origin = dist.Origins?.Items?.[0]?.DomainName;
-        if (s3Origin) {
-          const matchingBucket = resources.find(
-            (r) => r.type === 's3' && s3Origin.includes(r.id)
-          );
-
-          if (matchingBucket) {
-            resources.push({
-              type: 'cloudfront',
-              id: dist.Id,
-              app: matchingBucket.app,
-              environment: matchingBucket.environment,
-            });
-
-            console.log(
-              `${chalk.green('✓')} Found CloudFront distribution: ${chalk.cyan(dist.Id)}`
-            );
-            console.log(
-              `  ${chalk.gray(`Domain: ${dist.DomainName || 'unknown'}`)}`
-            );
-          }
-        }
-      }
-    }
-  } catch {
-    logger.warn('Failed to list CloudFront distributions (permission denied or error)');
-  }
-
-  console.log();
-
-  // Step 4: Filter resources for current app and environment
-  const targetEnv = env || 'default';
-  const matchingResources = resources.filter(
-    (r) => r.app === config.app && r.environment === targetEnv
-  );
-
-  if (matchingResources.length === 0) {
-    logger.warn(`No SCF-managed resources found for app "${config.app}" and environment "${targetEnv}"`);
-    console.log();
-    logger.info('Resources might have been deployed with a different configuration');
+    console.log(chalk.bold('All SCF-managed resources:'));
     console.log();
 
-    if (resources.length > 0) {
-      console.log(chalk.bold('Found resources for other apps/environments:'));
-      for (const res of resources) {
+    if (allResources.s3.length > 0) {
+      console.log(chalk.bold('S3 Buckets:'));
+      for (const s3 of allResources.s3) {
         console.log(
-          `  ${res.type === 's3' ? '🪣' : '🌐'} ${chalk.cyan(res.id)} ` +
-            `(app: ${res.app}, env: ${res.environment})`
+          `  ${chalk.green('✓')} ${chalk.cyan(s3.bucketName)} ` +
+            `(app: ${s3.app}, env: ${s3.environment})`
         );
       }
       console.log();
     }
 
+    if (allResources.cloudfront.length > 0) {
+      console.log(chalk.bold('CloudFront Distributions:'));
+      for (const cf of allResources.cloudfront) {
+        console.log(
+          `  ${chalk.green('✓')} ${chalk.cyan(cf.distributionId)} ` +
+            `(app: ${cf.app}, env: ${cf.environment})`
+        );
+        console.log(`    ${chalk.gray(`Domain: ${cf.domainName}`)}`);
+      }
+      console.log();
+    }
+
+    if (allResources.acm.length > 0) {
+      console.log(chalk.bold('ACM Certificates:'));
+      for (const acm of allResources.acm) {
+        console.log(
+          `  ${chalk.green('✓')} ${chalk.cyan(acm.domainName)} ` +
+            `(${acm.app || 'N/A'}, ${acm.environment || 'N/A'})`
+        );
+        console.log(`    ${chalk.gray(`Status: ${acm.status}`)}`);
+      }
+      console.log();
+    }
+
+    if (allResources.route53.length > 0) {
+      console.log(chalk.bold('Route53 Hosted Zones:'));
+      for (const r53 of allResources.route53) {
+        console.log(
+          `  ${chalk.green('✓')} ${chalk.cyan(r53.hostedZoneName)} ` +
+            `(${r53.app || 'N/A'}, ${r53.environment || 'N/A'})`
+        );
+      }
+      console.log();
+    }
+
+    const totalCount =
+      allResources.s3.length +
+      allResources.cloudfront.length +
+      allResources.acm.length +
+      allResources.route53.length;
+
+    if (totalCount === 0) {
+      logger.warn('No SCF-managed resources found');
+    }
+
     return;
   }
 
-  // Step 5: Confirm recovery
-  console.log(chalk.bold('Found matching resources:'));
-  for (const res of matchingResources) {
+  // Discover resources for specific app/environment
+  const targetEnv = env || 'default';
+  const discovered = await discoverAllResources(config, config.app, targetEnv);
+
+  // Display discovered resources
+  if (discovered.s3) {
     console.log(
-      `  ${res.type === 's3' ? '🪣' : '🌐'} ${res.type === 's3' ? 'S3 Bucket' : 'CloudFront'}: ${chalk.cyan(res.id)}`
+      `${chalk.green('✓')} Found S3 bucket: ${chalk.cyan(discovered.s3.bucketName)}`
+    );
+    console.log(
+      `  ${chalk.gray(`App: ${discovered.s3.app}, Env: ${discovered.s3.environment}`)}`
     );
   }
+
+  if (discovered.cloudfront) {
+    console.log(
+      `${chalk.green('✓')} Found CloudFront distribution: ${chalk.cyan(discovered.cloudfront.distributionId)}`
+    );
+    console.log(
+      `  ${chalk.gray(`Domain: ${discovered.cloudfront.domainName}`)}`
+    );
+  }
+
+  if (discovered.acm) {
+    console.log(
+      `${chalk.green('✓')} Found ACM certificate: ${chalk.cyan(discovered.acm.domainName)}`
+    );
+    console.log(`  ${chalk.gray(`Status: ${discovered.acm.status}`)}`);
+  }
+
+  if (discovered.route53) {
+    console.log(
+      `${chalk.green('✓')} Found Route53 hosted zone: ${chalk.cyan(discovered.route53.hostedZoneName)}`
+    );
+  }
+
   console.log();
 
+  if (!discovered.hasResources) {
+    logger.warn(
+      `No SCF-managed resources found for app "${config.app}" and environment "${targetEnv}"`
+    );
+    console.log();
+    logger.info(
+      'Resources might have been deployed with a different configuration'
+    );
+    console.log();
+    logger.info('Use --all flag to see all SCF-managed resources');
+    console.log();
+    return;
+  }
+
+  // Check if state already exists
+  if (!force && stateExists({ environment: env })) {
+    logger.warn(
+      `State file already exists for environment: ${env || 'default'}`
+    );
+    console.log();
+    logger.info('Use --force to overwrite the existing state file');
+    console.log();
+    return;
+  }
+
+  // Step 4: Confirm recovery
   if (!force) {
     const { confirm } = await inquirer.prompt([
       {
@@ -243,46 +237,34 @@ async function recoverCommand(options: RecoverOptions): Promise<void> {
     console.log();
   }
 
-  // Step 6: Create state from recovered resources
+  // Step 5: Create state from discovered resources
   let state = getOrCreateState(config.app, { environment: env });
 
-  const s3Resource = matchingResources.find((r) => r.type === 's3');
-  const cfResource = matchingResources.find((r) => r.type === 'cloudfront');
-
-  if (s3Resource) {
+  if (discovered.s3) {
     state = updateS3Resource(state, {
-      bucketName: s3Resource.id,
-      region: config.region,
-      websiteUrl: `http://${s3Resource.id}.s3-website.${config.region}.amazonaws.com`,
+      bucketName: discovered.s3.bucketName,
+      region: discovered.s3.region,
+      websiteUrl: `http://${discovered.s3.bucketName}.s3-website.${discovered.s3.region}.amazonaws.com`,
     });
   }
 
-  if (cfResource) {
-    // Get CloudFront details
-    const cfDetails = await cfClient.send(
-      new ListDistributionsCommand({})
-    );
-
-    const dist = cfDetails.DistributionList?.Items?.find(
-      (d) => d.Id === cfResource.id
-    );
-
-    if (dist && dist.Id && dist.DomainName) {
-      state = updateCloudFrontResource(state, {
-        distributionId: dist.Id,
-        domainName: dist.DomainName,
-        distributionUrl: `https://${dist.DomainName}`,
-      });
-    }
+  if (discovered.cloudfront) {
+    state = updateCloudFrontResource(state, {
+      distributionId: discovered.cloudfront.distributionId,
+      domainName: discovered.cloudfront.domainName,
+      distributionUrl: `https://${discovered.cloudfront.domainName}`,
+    });
   }
 
-  // Step 7: Save recovered state
+  // Step 6: Save recovered state
   saveState(state, { environment: env });
 
   console.log();
   logger.success('State file recovered successfully!');
   console.log();
-  logger.info(`State saved to: ${chalk.cyan(`.deploy/state${env ? `.${env}` : ''}.json`)}`);
+  logger.info(
+    `State saved to: ${chalk.cyan(`.deploy/state${env ? `.${env}` : ''}.json`)}`
+  );
   console.log();
   logger.info('You can now use scf-deploy commands normally');
   console.log();

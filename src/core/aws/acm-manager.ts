@@ -96,7 +96,9 @@ export class ACMManager {
    */
   async requestCertificate(
     domain: string,
-    alternativeNames?: string[]
+    alternativeNames?: string[],
+    app?: string,
+    environment?: string
   ): Promise<string> {
     const spinner = ora('Requesting ACM certificate...').start();
 
@@ -105,16 +107,27 @@ export class ACMManager {
         ? [domain, ...alternativeNames]
         : [domain];
 
+      const tags = [
+        { Key: 'scf:managed', Value: 'true' },
+        { Key: 'scf:tool', Value: 'scf-deploy' },
+        { Key: 'scf:domain', Value: domain },
+        { Key: 'scf:auto-created', Value: 'true' },
+      ];
+
+      // Add app and environment tags if provided
+      if (app) {
+        tags.push({ Key: 'scf:app', Value: app });
+      }
+      if (environment) {
+        tags.push({ Key: 'scf:environment', Value: environment });
+      }
+
       const { CertificateArn } = await this.client.send(
         new RequestCertificateCommand({
           DomainName: domain,
           SubjectAlternativeNames: subjectAlternativeNames,
           ValidationMethod: 'DNS',
-          Tags: [
-            { Key: 'scf:tool', Value: 'scf-deploy' },
-            { Key: 'scf:domain', Value: domain },
-            { Key: 'scf:auto-created', Value: 'true' },
-          ],
+          Tags: tags,
         })
       );
 

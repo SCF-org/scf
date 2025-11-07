@@ -7,8 +7,10 @@
  */
 export interface S3ResourceState {
   bucketName: string;
+  bucketArn?: string;
   region: string;
   websiteUrl?: string;
+  tags?: Record<string, string>;
 }
 
 /**
@@ -16,9 +18,32 @@ export interface S3ResourceState {
  */
 export interface CloudFrontResourceState {
   distributionId: string;
+  distributionArn?: string;
   domainName: string;
   distributionUrl: string;
   aliases?: string[];
+  tags?: Record<string, string>;
+}
+
+/**
+ * ACM certificate resource state
+ */
+export interface ACMResourceState {
+  certificateArn: string;
+  domainName: string;
+  status: string;
+  alternativeNames?: string[];
+  tags?: Record<string, string>;
+}
+
+/**
+ * Route53 hosted zone resource state
+ */
+export interface Route53ResourceState {
+  hostedZoneId: string;
+  hostedZoneName: string;
+  nameServers: string[];
+  tags?: Record<string, string>;
 }
 
 /**
@@ -27,6 +52,8 @@ export interface CloudFrontResourceState {
 export interface ResourcesState {
   s3?: S3ResourceState;
   cloudfront?: CloudFrontResourceState;
+  acm?: ACMResourceState;
+  route53?: Route53ResourceState;
 }
 
 /**
