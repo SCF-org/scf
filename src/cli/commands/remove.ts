@@ -1,5 +1,5 @@
 /**
- * Remove command
+ * Remove command - Delete all deployed AWS resources
  */
 
 import { Command } from 'commander';
@@ -7,25 +7,23 @@ import chalk from 'chalk';
 import inquirer from 'inquirer';
 import * as logger from '../utils/logger.js';
 import { loadConfig } from '../../core/config/index.js';
-import { getCredentials, createS3Client, createCloudFrontClient } from '../../core/aws/index.js';
+import { getCredentials } from '../../core/aws/index.js';
 import {
   loadState,
+  stateExists,
   deleteState,
-  getResourceIdentifiers,
-  formatResourceSummary,
 } from '../../core/state/index.js';
-import { DeleteObjectsCommand, ListObjectsV2Command, DeleteBucketCommand } from '@aws-sdk/client-s3';
 import {
-  GetDistributionCommand,
-  GetDistributionConfigCommand,
-  UpdateDistributionCommand,
-  DeleteDistributionCommand,
-  waitUntilDistributionDeployed,
-} from '@aws-sdk/client-cloudfront';
+  discoverAllResources,
+} from '../../core/aws/resource-discovery.js';
+import { deleteS3Bucket } from '../../core/aws/s3-bucket.js';
+import { deleteCloudFrontDistribution } from '../../core/aws/cloudfront-distribution.js';
+import { createS3Client, createCloudFrontClient } from '../../core/aws/client.js';
+import { ACMManager } from '../../core/aws/acm-manager.js';
+import { Route53Manager } from '../../core/aws/route53-manager.js';
+import type { DeploymentState } from '../../types/state.js';
+import type { DiscoveredResources } from '../../types/discovery.js';
 
-/**
- * Remove command options
- */
 interface RemoveOptions {
   env?: string;
   config?: string;
@@ -33,22 +31,23 @@ interface RemoveOptions {
   force?: boolean;
   keepBucket?: boolean;
   keepDistribution?: boolean;
+  keepCertificate?: boolean;
+  keepHostedZone?: boolean;
 }
 
-/**
- * Create remove command
- */
 export function createRemoveCommand(): Command {
   const command = new Command('remove');
 
   command
-    .description('Remove deployed resources (S3 bucket, CloudFront distribution)')
+    .description('Delete all deployed AWS resources')
     .option('-e, --env <environment>', 'Environment name')
     .option('-c, --config <path>', 'Config file path', 'scf.config.ts')
     .option('-p, --profile <profile>', 'AWS profile name')
     .option('-f, --force', 'Skip confirmation prompt')
     .option('--keep-bucket', 'Keep S3 bucket (only delete files)')
     .option('--keep-distribution', 'Keep CloudFront distribution')
+    .option('--keep-certificate', 'Keep ACM certificate')
+    .option('--keep-hosted-zone', 'Keep Route53 hosted zone')
     .action(async (options: RemoveOptions) => {
       try {
         await removeCommand(options);
@@ -62,9 +61,6 @@ export function createRemoveCommand(): Command {
   return command;
 }
 
-/**
- * Remove command handler
- */
 async function removeCommand(options: RemoveOptions): Promise<void> {
   const {
     env,
@@ -73,29 +69,17 @@ async function removeCommand(options: RemoveOptions): Promise<void> {
     force = false,
     keepBucket = false,
     keepDistribution = false,
+    keepCertificate = false,
+    keepHostedZone = false,
   } = options;
 
   // Header
   console.log();
-  console.log(chalk.bold.red('=�  SCF Resource Removal'));
+  console.log(chalk.bold.red('🗑️  SCF Resource Removal'));
   console.log();
 
-  // Step 1: Load state
-  logger.info('Loading deployment state...');
-
-  const state = loadState({ environment: env });
-
-  if (!state) {
-    logger.error(`No deployment found for environment: ${env}`);
-    logger.info('Nothing to remove');
-    return;
-  }
-
-  logger.success('Deployment state loaded');
-  console.log();
-  console.log(formatResourceSummary(state));
-
-  // Step 2: Load config
+  // Step 1: Load config
+  logger.info('Loading configuration...');
   const config = await loadConfig({
     configPath,
     env,
@@ -109,32 +93,117 @@ async function removeCommand(options: RemoveOptions): Promise<void> {
     config.credentials.profile = profile;
   }
 
-  // Get resource identifiers
-  const identifiers = getResourceIdentifiers(state);
+  logger.success('Configuration loaded');
+  console.log();
 
-  // Step 3: Confirmation prompt
-  if (!force) {
+  // Step 2: Get AWS credentials
+  logger.info('Verifying AWS credentials...');
+  const credentials = await getCredentials(config);
+  logger.success('Credentials verified');
+  console.log();
+
+  // Step 3: Try to load state, or discover resources if state doesn't exist
+  let state: DeploymentState | null = null;
+  let discovered: DiscoveredResources | null = null;
+
+  const hasState = stateExists({ environment: env });
+
+  if (hasState) {
+    logger.info('Loading deployment state...');
+    state = loadState({ environment: env });
+    logger.success('State file loaded');
+  } else {
+    logger.warn('State file not found. Discovering resources from AWS...');
     console.log();
-    logger.warn('This action will delete the following resources:');
 
-    if (identifiers.distributionId && !keepDistribution) {
-      console.log(chalk.red('  - CloudFront Distribution:'), identifiers.distributionId);
-    }
-    if (identifiers.s3BucketName) {
-      if (keepBucket) {
-        console.log(chalk.yellow('  - S3 Bucket files:'), identifiers.s3BucketName);
-      } else {
-        console.log(chalk.red('  - S3 Bucket:'), identifiers.s3BucketName);
-      }
+    const targetEnv = env || 'default';
+    discovered = await discoverAllResources(config, config.app, targetEnv);
+
+    if (!discovered.hasResources) {
+      logger.warn(
+        `No SCF-managed resources found for app "${config.app}" and environment "${targetEnv}"`
+      );
+      console.log();
+      logger.info('Nothing to remove.');
+      console.log();
+      return;
     }
 
+    logger.success('Resources discovered from AWS tags');
+  }
+
+  console.log();
+
+  // Step 4: Display all resources that will be removed
+  console.log(chalk.bold('📋 Resources to be removed:'));
+  console.log();
+
+  let hasS3 = false;
+  let hasCloudFront = false;
+  let hasACM = false;
+  let hasRoute53 = false;
+
+  // S3 Bucket
+  const s3BucketName = state?.resources.s3?.bucketName || discovered?.s3?.bucketName;
+  const s3Region = state?.resources.s3?.region || discovered?.s3?.region;
+  if (s3BucketName && !keepBucket) {
+    hasS3 = true;
+    console.log(chalk.cyan('S3 Bucket:'));
+    console.log(`  ${chalk.gray('Bucket Name:')} ${s3BucketName}`);
+    console.log(`  ${chalk.gray('Region:')} ${s3Region || 'unknown'}`);
+    console.log();
+  }
+
+  // CloudFront Distribution
+  const cfDistributionId = state?.resources.cloudfront?.distributionId || discovered?.cloudfront?.distributionId;
+  const cfDomainName = state?.resources.cloudfront?.domainName || discovered?.cloudfront?.domainName;
+  if (cfDistributionId && !keepDistribution) {
+    hasCloudFront = true;
+    console.log(chalk.cyan('CloudFront Distribution:'));
+    console.log(`  ${chalk.gray('Distribution ID:')} ${cfDistributionId}`);
+    console.log(`  ${chalk.gray('Domain Name:')} ${cfDomainName || 'unknown'}`);
+    console.log();
+  }
+
+  // ACM Certificate
+  const acmCertificateArn = state?.resources.acm?.certificateArn || discovered?.acm?.certificateArn;
+  const acmDomainName = state?.resources.acm?.domainName || discovered?.acm?.domainName;
+  if (acmCertificateArn && !keepCertificate) {
+    hasACM = true;
+    console.log(chalk.cyan('ACM Certificate:'));
+    console.log(`  ${chalk.gray('Certificate ARN:')} ${acmCertificateArn}`);
+    console.log(`  ${chalk.gray('Domain Name:')} ${acmDomainName || 'unknown'}`);
+    console.log();
+  }
+
+  // Route53 Hosted Zone
+  const route53ZoneId = state?.resources.route53?.hostedZoneId || discovered?.route53?.hostedZoneId;
+  const route53ZoneName = state?.resources.route53?.hostedZoneName || discovered?.route53?.hostedZoneName;
+  if (route53ZoneId && !keepHostedZone) {
+    hasRoute53 = true;
+    console.log(chalk.cyan('Route53 Hosted Zone:'));
+    console.log(`  ${chalk.gray('Zone ID:')} ${route53ZoneId}`);
+    console.log(`  ${chalk.gray('Zone Name:')} ${route53ZoneName || 'unknown'}`);
+    console.log();
+  }
+
+  // Check if there are any resources to remove
+  if (!hasS3 && !hasCloudFront && !hasACM && !hasRoute53) {
+    logger.info('No resources to remove (all resources are being kept or not found).');
+    console.log();
+    return;
+  }
+
+  // Step 5: Confirmation
+  if (!force) {
+    console.log(chalk.yellow('⚠️  Warning: This action cannot be undone!'));
     console.log();
 
     const { confirm } = await inquirer.prompt([
       {
         type: 'confirm',
         name: 'confirm',
-        message: 'Are you sure you want to continue?',
+        message: 'Are you sure you want to delete these resources?',
         default: false,
       },
     ]);
@@ -143,195 +212,91 @@ async function removeCommand(options: RemoveOptions): Promise<void> {
       logger.info('Removal cancelled');
       return;
     }
+
+    console.log();
   }
 
-  // Step 4: Get credentials
-  console.log();
-  logger.info('Verifying AWS credentials...');
-  await getCredentials(config);
-  logger.success('Credentials verified');
+  // Step 6: Delete resources in proper order
+  // Order: CloudFront → ACM → S3 → Route53
+  // (CloudFront must be deleted before ACM certificate can be removed)
 
-  // Step 5: Remove CloudFront distribution
-  if (identifiers.distributionId && !keepDistribution) {
-    console.log();
-    logger.info(`Removing CloudFront distribution: ${identifiers.distributionId}`);
+  let deletionErrors: string[] = [];
 
-    const cfClient = createCloudFrontClient(config);
-
+  // 6.1: Delete CloudFront Distribution
+  if (hasCloudFront && cfDistributionId) {
     try {
-      // Get distribution
-      const getDistResult = await cfClient.send(
-        new GetDistributionCommand({
-          Id: identifiers.distributionId,
-        })
-      );
-
-      if (getDistResult.Distribution?.Status === 'InProgress') {
-        logger.warn('Distribution is deploying. Waiting for deployment to complete...');
-        await waitUntilDistributionDeployed(
-          {
-            client: cfClient,
-            maxWaitTime: 1200,
-            minDelay: 20,
-            maxDelay: 60,
-          },
-          {
-            Id: identifiers.distributionId,
-          }
-        );
-      }
-
-      // Disable distribution first
-      const configResult = await cfClient.send(
-        new GetDistributionConfigCommand({
-          Id: identifiers.distributionId,
-        })
-      );
-
-      if (configResult.DistributionConfig && configResult.ETag) {
-        if (configResult.DistributionConfig.Enabled) {
-          logger.info('Disabling distribution...');
-          configResult.DistributionConfig.Enabled = false;
-
-          await cfClient.send(
-            new UpdateDistributionCommand({
-              Id: identifiers.distributionId,
-              DistributionConfig: configResult.DistributionConfig,
-              IfMatch: configResult.ETag,
-            })
-          );
-
-          logger.info('Waiting for distribution to be disabled...');
-          await waitUntilDistributionDeployed(
-            {
-              client: cfClient,
-              maxWaitTime: 1200,
-              minDelay: 20,
-              maxDelay: 60,
-            },
-            {
-              Id: identifiers.distributionId,
-            }
-          );
-        }
-
-        // Get updated ETag
-        const updatedConfigResult = await cfClient.send(
-          new GetDistributionConfigCommand({
-            Id: identifiers.distributionId,
-          })
-        );
-
-        // Delete distribution
-        if (updatedConfigResult.ETag) {
-          logger.info('Deleting distribution...');
-          await cfClient.send(
-            new DeleteDistributionCommand({
-              Id: identifiers.distributionId,
-              IfMatch: updatedConfigResult.ETag,
-            })
-          );
-
-          logger.success('CloudFront distribution deleted');
-        }
-      }
-    } catch (error: unknown) {
-      if (
-        error &&
-        typeof error === 'object' &&
-        'name' in error &&
-        error.name === 'NoSuchDistribution'
-      ) {
-        logger.warn('Distribution not found (may have been already deleted)');
-      } else {
-        throw error;
-      }
+      const cfClient = createCloudFrontClient(config);
+      await deleteCloudFrontDistribution(cfClient, cfDistributionId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      deletionErrors.push(`CloudFront: ${message}`);
+      logger.error(`Failed to delete CloudFront distribution: ${message}`);
+      console.log();
     }
   }
 
-  // Step 6: Remove S3 bucket
-  if (identifiers.s3BucketName) {
-    console.log();
-    logger.info(`Removing S3 bucket: ${identifiers.s3BucketName}`);
-
-    const s3Client = createS3Client(config);
-
+  // 6.2: Delete ACM Certificate (after CloudFront is deleted)
+  if (hasACM && acmCertificateArn) {
     try {
-      // List all objects
-      logger.info('Listing bucket objects...');
-      let objectsDeleted = 0;
-
-      let continuationToken: string | undefined;
-      do {
-        const listResult = await s3Client.send(
-          new ListObjectsV2Command({
-            Bucket: identifiers.s3BucketName,
-            ContinuationToken: continuationToken,
-          })
-        );
-
-        if (listResult.Contents && listResult.Contents.length > 0) {
-          // Delete objects
-          logger.info(`Deleting ${listResult.Contents.length} objects...`);
-
-          await s3Client.send(
-            new DeleteObjectsCommand({
-              Bucket: identifiers.s3BucketName,
-              Delete: {
-                Objects: listResult.Contents.map((obj) => ({ Key: obj.Key })),
-              },
-            })
-          );
-
-          objectsDeleted += listResult.Contents.length;
-        }
-
-        continuationToken = listResult.NextContinuationToken;
-      } while (continuationToken);
-
-      logger.success(`Deleted ${objectsDeleted} objects`);
-
-      // Delete bucket
-      if (!keepBucket) {
-        logger.info('Deleting bucket...');
-        await s3Client.send(
-          new DeleteBucketCommand({
-            Bucket: identifiers.s3BucketName,
-          })
-        );
-
-        logger.success('S3 bucket deleted');
-      } else {
-        logger.info('Bucket kept (--keep-bucket flag)');
-      }
-    } catch (error: unknown) {
-      if (
-        error &&
-        typeof error === 'object' &&
-        'name' in error &&
-        error.name === 'NoSuchBucket'
-      ) {
-        logger.warn('Bucket not found (may have been already deleted)');
-      } else {
-        throw error;
-      }
+      const acmManager = new ACMManager({ credentials });
+      await acmManager.deleteCertificate(acmCertificateArn);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      deletionErrors.push(`ACM: ${message}`);
+      logger.error(`Failed to delete ACM certificate: ${message}`);
+      console.log();
     }
   }
 
-  // Step 7: Delete state file
+  // 6.3: Delete S3 Bucket
+  if (hasS3 && s3BucketName && s3Region) {
+    try {
+      const s3Client = createS3Client(config);
+      await deleteS3Bucket(s3Client, s3BucketName, s3Region);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      deletionErrors.push(`S3: ${message}`);
+      logger.error(`Failed to delete S3 bucket: ${message}`);
+      console.log();
+    }
+  }
+
+  // 6.4: Delete Route53 Hosted Zone
+  if (hasRoute53 && route53ZoneId) {
+    try {
+      const route53Manager = new Route53Manager({
+        region: config.region,
+        credentials,
+      });
+      await route53Manager.deleteHostedZone(route53ZoneId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      deletionErrors.push(`Route53: ${message}`);
+      logger.error(`Failed to delete Route53 hosted zone: ${message}`);
+      console.log();
+    }
+  }
+
+  // Step 7: Delete state file if all deletions succeeded
+  if (deletionErrors.length === 0 && hasState) {
+    deleteState({ environment: env });
+    console.log();
+    logger.success('State file deleted');
+  }
+
+  // Step 8: Summary
   console.log();
-  logger.info('Deleting deployment state...');
-
-  const deleted = deleteState({ environment: env });
-
-  if (deleted) {
-    logger.success('Deployment state deleted');
+  if (deletionErrors.length > 0) {
+    console.log(chalk.yellow('⚠️  Some resources could not be deleted:'));
+    console.log();
+    for (const error of deletionErrors) {
+      console.log(`  ${chalk.red('✗')} ${error}`);
+    }
+    console.log();
+    logger.warn('Some resources may still exist. Please check AWS console and retry if needed.');
   } else {
-    logger.warn('State file not found');
+    logger.success('All resources removed successfully!');
   }
 
-  // Final message
-  console.log();
-  console.log(chalk.green.bold('( Resources removed successfully!'));
   console.log();
 }

@@ -8,6 +8,7 @@ import {
   RequestCertificateCommand,
   DescribeCertificateCommand,
   ListCertificatesCommand,
+  DeleteCertificateCommand,
   type CertificateDetail,
   CertificateStatus,
 } from '@aws-sdk/client-acm';
@@ -288,6 +289,38 @@ export class ACMManager {
       return certificate.Status === CertificateStatus.ISSUED;
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * Delete ACM certificate
+   * Note: Certificate must not be in use by any AWS resources (e.g., CloudFront)
+   */
+  async deleteCertificate(certificateArn: string): Promise<void> {
+    const spinner = ora('Deleting ACM certificate...').start();
+
+    try {
+      await this.client.send(
+        new DeleteCertificateCommand({
+          CertificateArn: certificateArn,
+        })
+      );
+
+      spinner.succeed('ACM certificate deleted successfully');
+    } catch (error) {
+      spinner.fail('Failed to delete ACM certificate');
+
+      // Check if it's in-use error
+      if (error instanceof Error && error.message.includes('in use')) {
+        throw new Error(
+          'Certificate is currently in use by CloudFront or other AWS resources.\n' +
+          'Please delete the CloudFront distribution first, then retry.'
+        );
+      }
+
+      throw new Error(
+        `ACM certificate deletion failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
   }
 }

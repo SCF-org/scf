@@ -11,6 +11,8 @@ import {
   type CreateHostedZoneRequest,
   GetHostedZoneCommand,
   ChangeTagsForResourceCommand,
+  DeleteHostedZoneCommand,
+  ListResourceRecordSetsCommand,
   type HostedZone,
   type Change,
   ChangeAction,
@@ -444,5 +446,105 @@ export class Route53Manager {
     // Route53 returns IDs like "/hostedzone/Z123456789ABC"
     // We need just "Z123456789ABC"
     return hostedZoneId.replace("/hostedzone/", "");
+  }
+
+  /**
+   * Delete all records except NS and SOA from a hosted zone
+   * This is required before deleting the hosted zone
+   */
+  private async deleteAllRecords(hostedZoneId: string): Promise<void> {
+    const spinner = ora('Deleting DNS records...').start();
+
+    try {
+      const { ResourceRecordSets } = await this.client.send(
+        new ListResourceRecordSetsCommand({
+          HostedZoneId: hostedZoneId,
+        })
+      );
+
+      if (!ResourceRecordSets || ResourceRecordSets.length === 0) {
+        spinner.succeed('No records to delete');
+        return;
+      }
+
+      // Filter out NS and SOA records (cannot be deleted)
+      const recordsToDelete = ResourceRecordSets.filter(
+        (record) => record.Type !== RRType.NS && record.Type !== RRType.SOA
+      );
+
+      if (recordsToDelete.length === 0) {
+        spinner.succeed('No deletable records found');
+        return;
+      }
+
+      // Delete records in batches
+      const changes: Change[] = recordsToDelete.map((record) => ({
+        Action: ChangeAction.DELETE,
+        ResourceRecordSet: record,
+      }));
+
+      await this.client.send(
+        new ChangeResourceRecordSetsCommand({
+          HostedZoneId: hostedZoneId,
+          ChangeBatch: {
+            Comment: 'Deleting all records before zone deletion',
+            Changes: changes,
+          },
+        })
+      );
+
+      spinner.succeed(`Deleted ${recordsToDelete.length} DNS record(s)`);
+    } catch (error) {
+      spinner.fail('Failed to delete DNS records');
+      throw new Error(
+        `DNS record deletion failed: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`
+      );
+    }
+  }
+
+  /**
+   * Delete a hosted zone
+   * Note: All records except NS and SOA must be deleted first
+   */
+  async deleteHostedZone(hostedZoneId: string): Promise<void> {
+    const spinner = ora('Deleting Route53 hosted zone...').start();
+
+    try {
+      const id = this.extractHostedZoneId(hostedZoneId);
+
+      // First, delete all non-NS/SOA records
+      spinner.text = 'Preparing hosted zone for deletion...';
+      await this.deleteAllRecords(id);
+
+      // Now delete the hosted zone
+      spinner.text = 'Deleting Route53 hosted zone...';
+      await this.client.send(
+        new DeleteHostedZoneCommand({
+          Id: id,
+        })
+      );
+
+      spinner.succeed('Route53 hosted zone deleted successfully');
+    } catch (error) {
+      spinner.fail('Failed to delete Route53 hosted zone');
+
+      // Check for common errors
+      if (error instanceof Error) {
+        if (error.message.includes('not empty')) {
+          throw new Error(
+            'Hosted zone still has records that cannot be deleted.\n' +
+            'Please manually remove all records except NS and SOA records, then retry.'
+          );
+        }
+      }
+
+      throw new Error(
+        `Route53 hosted zone deletion failed: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`
+      );
+    }
   }
 }

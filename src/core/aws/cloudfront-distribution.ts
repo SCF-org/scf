@@ -7,6 +7,7 @@ import {
   GetDistributionCommand,
   CreateDistributionCommand,
   UpdateDistributionCommand,
+  DeleteDistributionCommand,
   GetDistributionConfigCommand,
   waitUntilDistributionDeployed,
   TagResourceCommand,
@@ -423,5 +424,97 @@ export async function getDistributionTags(
   } catch (error) {
     // Return empty tags if we can't read them
     return {};
+  }
+}
+
+/**
+ * Delete CloudFront distribution
+ * This will disable the distribution first, then delete it
+ */
+export async function deleteCloudFrontDistribution(
+  client: CloudFrontClient,
+  distributionId: string
+): Promise<void> {
+  const ora = (await import('ora')).default;
+  const spinner = ora('Deleting CloudFront distribution...').start();
+
+  try {
+    // Get distribution
+    spinner.text = 'Getting distribution details...';
+    const getDistResult = await client.send(
+      new GetDistributionCommand({
+        Id: distributionId,
+      })
+    );
+
+    // Wait if distribution is deploying
+    if (getDistResult.Distribution?.Status === 'InProgress') {
+      spinner.text = 'Waiting for distribution deployment to complete...';
+      await waitForDistributionDeployed(client, distributionId, {
+        maxWaitTime: 1200,
+        minDelay: 20,
+        maxDelay: 60,
+      });
+    }
+
+    // Get distribution config
+    spinner.text = 'Disabling distribution...';
+    const configResult = await client.send(
+      new GetDistributionConfigCommand({
+        Id: distributionId,
+      })
+    );
+
+    if (configResult.DistributionConfig && configResult.ETag) {
+      // Disable distribution if not already disabled
+      if (configResult.DistributionConfig.Enabled) {
+        configResult.DistributionConfig.Enabled = false;
+
+        await client.send(
+          new UpdateDistributionCommand({
+            Id: distributionId,
+            DistributionConfig: configResult.DistributionConfig,
+            IfMatch: configResult.ETag,
+          })
+        );
+
+        spinner.text = 'Waiting for distribution to be disabled...';
+        await waitForDistributionDeployed(client, distributionId, {
+          maxWaitTime: 1200,
+          minDelay: 20,
+          maxDelay: 60,
+        });
+      }
+
+      // Get updated ETag
+      const updatedConfigResult = await client.send(
+        new GetDistributionConfigCommand({
+          Id: distributionId,
+        })
+      );
+
+      // Delete distribution
+      if (updatedConfigResult.ETag) {
+        spinner.text = 'Deleting distribution...';
+        await client.send(
+          new DeleteDistributionCommand({
+            Id: distributionId,
+            IfMatch: updatedConfigResult.ETag,
+          })
+        );
+
+        spinner.succeed('CloudFront distribution deleted successfully');
+      }
+    }
+  } catch (error) {
+    spinner.fail('Failed to delete CloudFront distribution');
+
+    if (error && typeof error === 'object' && 'name' in error && error.name === 'NoSuchDistribution') {
+      throw new Error('Distribution not found (may have been already deleted)');
+    }
+
+    throw new Error(
+      `CloudFront distribution deletion failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
   }
 }

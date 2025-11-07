@@ -11,6 +11,9 @@ import {
   DeletePublicAccessBlockCommand,
   PutBucketTaggingCommand,
   GetBucketTaggingCommand,
+  ListObjectsV2Command,
+  DeleteObjectsCommand,
+  DeleteBucketCommand,
   type BucketLocationConstraint,
 } from '@aws-sdk/client-s3';
 
@@ -246,4 +249,70 @@ export function getBucketWebsiteUrl(bucketName: string, region: string): string 
     return `http://${bucketName}.s3-website-us-east-1.amazonaws.com`;
   }
   return `http://${bucketName}.s3-website.${region}.amazonaws.com`;
+}
+
+/**
+ * Delete S3 bucket and all its contents
+ */
+export async function deleteS3Bucket(
+  client: S3Client,
+  bucketName: string,
+  _region: string
+): Promise<void> {
+  const ora = (await import('ora')).default;
+  const spinner = ora('Deleting S3 bucket...').start();
+
+  try {
+    // First, delete all objects in the bucket
+    spinner.text = 'Listing bucket objects...';
+    let objectsDeleted = 0;
+
+    let continuationToken: string | undefined;
+    do {
+      const listResult = await client.send(
+        new ListObjectsV2Command({
+          Bucket: bucketName,
+          ContinuationToken: continuationToken,
+        })
+      );
+
+      if (listResult.Contents && listResult.Contents.length > 0) {
+        spinner.text = `Deleting ${listResult.Contents.length} objects...`;
+
+        await client.send(
+          new DeleteObjectsCommand({
+            Bucket: bucketName,
+            Delete: {
+              Objects: listResult.Contents.map((obj) => ({ Key: obj.Key })),
+            },
+          })
+        );
+
+        objectsDeleted += listResult.Contents.length;
+        spinner.text = `Deleted ${objectsDeleted} objects...`;
+      }
+
+      continuationToken = listResult.NextContinuationToken;
+    } while (continuationToken);
+
+    // Delete the bucket itself
+    spinner.text = 'Deleting bucket...';
+    await client.send(
+      new DeleteBucketCommand({
+        Bucket: bucketName,
+      })
+    );
+
+    spinner.succeed(`S3 bucket deleted (${objectsDeleted} objects removed)`);
+  } catch (error) {
+    spinner.fail('Failed to delete S3 bucket');
+
+    if (error && typeof error === 'object' && 'name' in error && error.name === 'NoSuchBucket') {
+      throw new Error('Bucket not found (may have been already deleted)');
+    }
+
+    throw new Error(
+      `S3 bucket deletion failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
 }
