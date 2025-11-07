@@ -8,6 +8,8 @@ Automate static website deployment to AWS S3 and CloudFront with a simple, power
 
 **Current Version:** 0.5.0
 
+> **What's New in v0.5.0**: Automatic SSL certificates, Route53 hosted zone creation, enhanced resource recovery with ACM/Route53 support, and complete resource deletion with tag-based discovery!
+
 ## Table of Contents
 
 - [Features](#features)
@@ -51,9 +53,11 @@ Automate static website deployment to AWS S3 and CloudFront with a simple, power
 ### 🔐 SSL & Custom Domains (NEW in v0.5.0)
 
 - **Automatic SSL Certificate Creation**: Just provide your domain name - SSL certificate is created automatically
+- **Route53 Hosted Zone Auto-Creation**: Automatically creates hosted zones if they don't exist
+- **DNS Alias Records**: Automatic A/AAAA alias record creation for CloudFront distributions
 - **Route53 Integration**: Automatic DNS validation record creation
 - **Certificate Reuse**: Automatically detects and reuses existing certificates
-- **Zero Configuration HTTPS**: No need to manually create ACM certificates
+- **Zero Configuration HTTPS**: No need to manually create ACM certificates or hosted zones
 - **Domain Ownership Verification**: Validates Route53 hosted zone before deployment
 
 ### ☁️ CloudFront & Performance
@@ -63,11 +67,14 @@ Automate static website deployment to AWS S3 and CloudFront with a simple, power
 - **Custom Domains**: Built-in support for custom domains with automatic SSL
 - **CDN Optimization**: Configurable price classes and TTL settings
 
-### 📦 State & Resource Management
+### 📦 State & Resource Management (Enhanced in v0.5.0)
 
 - **State Management**: Track deployed resources locally with automatic .gitignore handling
-- **State Recovery**: Recover lost state files from AWS resource tags
-- **Resource Tagging**: All AWS resources automatically tagged for easy management
+- **Enhanced State Recovery**: Recover lost state files from AWS resource tags (S3, CloudFront, ACM, Route53)
+- **Tag-Based Resource Discovery**: Find and manage all SCF-managed resources without state files
+- **Comprehensive Resource Tagging**: All AWS resources automatically tagged (`scf:managed`, `scf:app`, `scf:environment`)
+- **Complete Resource Deletion**: Remove command now deletes ACM certificates and Route53 hosted zones
+- **Resource Tracking**: View all deployed resources even without state files
 
 ### 💻 Developer Experience
 
@@ -280,7 +287,7 @@ const config: SCFConfig = {
   cloudfront: {
     enabled: true,
     customDomain: {
-      domainName: "example.com",  // That's it! SSL certificate is created automatically
+      domainName: "example.com", // That's it! SSL certificate is created automatically
     },
   },
 };
@@ -292,13 +299,15 @@ export default config;
 
 When you deploy with just `domainName`:
 
-1. ✅ **Route53 Validation** - Checks if domain is registered in Route53
-2. ✅ **Certificate Search** - Looks for existing valid certificates
-3. ✅ **Certificate Creation** - Requests new ACM certificate if needed (in us-east-1)
-4. ✅ **DNS Validation** - Creates DNS validation records in Route53
-5. ✅ **Validation Wait** - Waits for certificate to be validated (5-30 minutes)
-6. ✅ **CloudFront Setup** - Applies certificate to CloudFront distribution
-7. ✅ **HTTPS Ready** - Your site is live with HTTPS!
+1. ✅ **Route53 Hosted Zone Check** - Checks if hosted zone exists for domain
+2. ✅ **Auto-Create Hosted Zone** - Creates hosted zone automatically if not found (NEW!)
+3. ✅ **Certificate Search** - Looks for existing valid certificates
+4. ✅ **Certificate Creation** - Requests new ACM certificate if needed (in us-east-1)
+5. ✅ **DNS Validation** - Creates DNS validation records in Route53
+6. ✅ **Validation Wait** - Waits for certificate to be validated (5-30 minutes)
+7. ✅ **CloudFront Setup** - Applies certificate to CloudFront distribution
+8. ✅ **DNS Alias Records** - Creates A/AAAA alias records pointing to CloudFront (NEW!)
+9. ✅ **HTTPS Ready** - Your site is live with HTTPS!
 
 ### Deployment Output
 
@@ -339,7 +348,7 @@ const config: SCFConfig = {
     enabled: true,
     customDomain: {
       domainName: "example.com",
-      certificateArn: "arn:aws:acm:us-east-1:123456789012:certificate/abc-def",  // Use existing certificate
+      certificateArn: "arn:aws:acm:us-east-1:123456789012:certificate/abc-def", // Use existing certificate
     },
   },
 };
@@ -349,10 +358,12 @@ export default config;
 
 ### Requirements for Automatic SSL
 
-1. **Route53 Hosted Zone**: Your domain must be registered in Route53
+1. **Route53 Hosted Zone**: Your domain must be registered in Route53 (or will be created automatically)
 2. **AWS Permissions**: ACM and Route53 permissions required (see below)
 3. **Time**: First deployment takes 5-30 minutes for certificate validation
 4. **Region**: Certificate is automatically created in us-east-1 (CloudFront requirement)
+
+**Note**: If a hosted zone doesn't exist for your domain, scf-deploy will automatically create one. You'll need to update your domain's nameservers at your registrar to point to the Route53 nameservers (displayed after creation).
 
 ### Certificate Reuse
 
@@ -432,10 +443,10 @@ scf-deploy deploy --force
 
 ### remove
 
-Remove deployed AWS resources.
+Remove deployed AWS resources (Enhanced in v0.5.0).
 
 ```bash
-# Remove resources (with confirmation prompt)
+# Remove all resources (with confirmation prompt)
 scf-deploy remove
 
 # Force remove without confirmation
@@ -449,6 +460,32 @@ scf-deploy remove --keep-bucket
 
 # Keep CloudFront distribution
 scf-deploy remove --keep-distribution
+
+# Keep ACM certificate
+scf-deploy remove --keep-certificate
+
+# Keep Route53 hosted zone
+scf-deploy remove --keep-hosted-zone
+```
+
+**What gets deleted:**
+
+The `remove` command will delete ALL resources created by scf-deploy:
+
+1. 🗑️ **CloudFront Distribution** - Distribution is disabled and deleted
+2. 🗑️ **ACM Certificate** - SSL certificate is removed (NEW in v0.5.0)
+3. 🗑️ **S3 Bucket** - All files and the bucket are deleted
+4. 🗑️ **Route53 Hosted Zone** - Hosted zone and all DNS records deleted (NEW in v0.5.0)
+
+Before deletion, you'll see a detailed list of all resources that will be removed.
+
+**Tag-Based Discovery** (NEW in v0.5.0):
+
+Even without a state file, `remove` can discover and delete resources using AWS tags:
+
+```bash
+# Works even if .deploy/state.json is missing!
+scf-deploy remove --env prod
 ```
 
 **Options:**
@@ -459,6 +496,37 @@ scf-deploy remove --keep-distribution
 - `-f, --force` - Skip confirmation prompt
 - `--keep-bucket` - Keep S3 bucket (only delete files)
 - `--keep-distribution` - Keep CloudFront distribution
+- `--keep-certificate` - Keep ACM certificate (NEW in v0.5.0)
+- `--keep-hosted-zone` - Keep Route53 hosted zone (NEW in v0.5.0)
+
+**Example:**
+
+```bash
+$ scf-deploy remove --env prod
+
+🗑️  SCF Resource Removal
+
+📋 Resources to be removed:
+
+S3 Bucket:
+  Bucket Name: my-app-prod-abc123
+  Region: us-east-1
+
+CloudFront Distribution:
+  Distribution ID: E1234567890ABC
+  Domain Name: d123456.cloudfront.net
+
+ACM Certificate:
+  Certificate ARN: arn:aws:acm:us-east-1:...
+  Domain Name: example.com
+
+Route53 Hosted Zone:
+  Zone ID: Z1234567890ABC
+  Zone Name: example.com.
+
+⚠️  Warning: This action cannot be undone!
+? Are you sure you want to delete these resources? (y/N)
+```
 
 ### status
 
@@ -486,7 +554,7 @@ scf-deploy status --json
 
 ### recover
 
-Recover lost deployment state from AWS resources.
+Recover lost deployment state from AWS resources (Enhanced in v0.5.0).
 
 If you accidentally delete the `.deploy/state.json` file, you can recover it from AWS resource tags.
 
@@ -497,16 +565,28 @@ scf-deploy recover
 # Recover specific environment
 scf-deploy recover --env prod
 
+# Show all SCF-managed resources
+scf-deploy recover --all
+
 # Overwrite existing state file
 scf-deploy recover --force
 ```
 
+**Enhanced Resource Discovery** (NEW in v0.5.0):
+
+Now discovers ALL AWS resources, not just S3 and CloudFront:
+
+1. 📦 **S3 Buckets** - Tagged buckets with app/environment
+2. ☁️ **CloudFront Distributions** - Distributions with matching tags
+3. 🔐 **ACM Certificates** - SSL certificates with domain info (NEW!)
+4. 🌐 **Route53 Hosted Zones** - DNS zones with domain records (NEW!)
+
 **How it works:**
 
-1. Searches for S3 buckets with `scf:managed=true` tag
-2. Finds associated CloudFront distributions
-3. Filters by app name and environment
-4. Reconstructs the state file from AWS resources
+1. Searches for all resources with `scf:managed=true` tag
+2. Filters by app name and environment from config
+3. Discovers S3 buckets, CloudFront distributions, ACM certificates, and Route53 zones
+4. Reconstructs the complete state file from AWS metadata
 
 **Options:**
 
@@ -514,12 +594,42 @@ scf-deploy recover --force
 - `-c, --config <path>` - Config file path (default: "scf.config.ts")
 - `-p, --profile <profile>` - AWS profile name
 - `-f, --force` - Overwrite existing state file
+- `-a, --all` - Show all SCF-managed resources across all apps/environments (NEW!)
 
-**Note:** All AWS resources created by scf-deploy are automatically tagged for recovery:
+**Example with `--all` flag:**
+
+```bash
+$ scf-deploy recover --all
+
+🔄 SCF State Recovery
+
+All SCF-managed resources:
+
+S3 Buckets:
+  ✓ my-app-prod (app: my-app, env: prod)
+  ✓ my-app-dev (app: my-app, env: dev)
+
+CloudFront Distributions:
+  ✓ E1234567890ABC (app: my-app, env: prod)
+    Domain: d123456.cloudfront.net
+
+ACM Certificates:
+  ✓ example.com (my-app, prod)
+    Status: ISSUED
+
+Route53 Hosted Zones:
+  ✓ example.com. (my-app, prod)
+```
+
+**Automatic Resource Tags:**
+
+All AWS resources created by scf-deploy are automatically tagged:
 
 - `scf:managed=true` - Indicates resource is managed by scf-deploy
 - `scf:app=<app-name>` - Application name from config
 - `scf:environment=<env>` - Environment name
+- `scf:tool=scf-deploy` - Tool identifier
+- Resource-specific tags (domain, region, etc.)
 
 ## AWS Credentials
 
@@ -571,7 +681,7 @@ This happens automatically during:
 - `scf-deploy init` - When initializing configuration
 - `scf-deploy deploy` - After first successful deployment
 
-### State Recovery
+### State Recovery (Enhanced in v0.5.0)
 
 If you accidentally delete `.deploy/state.json`, you can recover it:
 
@@ -581,19 +691,70 @@ scf-deploy recover --env prod
 
 **How it works:**
 
-- All AWS resources are tagged with `scf:managed`, `scf:app`, `scf:environment`
-- `recover` command searches for these tagged resources
+- All AWS resources are tagged with `scf:managed`, `scf:app`, `scf:environment`, `scf:tool`
+- `recover` command searches for these tagged resources across all AWS services
 - State file is reconstructed from AWS metadata
 - You can continue deploying without recreating resources
 
-**What can be recovered:**
+**What can be recovered** (Enhanced in v0.5.0):
 
-- S3 bucket information
-- CloudFront distribution ID and domain
-- Resource creation timestamps
-- Environment configuration
+- ✅ S3 bucket information (name, region, website URL)
+- ✅ CloudFront distribution (ID, domain, ARN)
+- ✅ ACM certificate (ARN, domain, status) - NEW!
+- ✅ Route53 hosted zone (zone ID, name, nameservers) - NEW!
+- ✅ Resource tags and metadata
+- ✅ Environment configuration
 
 **Note:** File hashes are not recoverable, so the next deployment will re-upload all files.
+
+**Tag-Based Resource Discovery:**
+
+scf-deploy now uses a comprehensive tagging system across all AWS resources:
+
+```javascript
+// Example tags on S3 bucket
+{
+  'scf:managed': 'true',
+  'scf:app': 'my-app',
+  'scf:environment': 'prod',
+  'scf:tool': 'scf-deploy',
+  'scf:region': 'us-east-1'
+}
+
+// Example tags on CloudFront distribution
+{
+  'scf:managed': 'true',
+  'scf:app': 'my-app',
+  'scf:environment': 'prod',
+  'scf:tool': 'scf-deploy'
+}
+
+// Example tags on ACM certificate
+{
+  'scf:managed': 'true',
+  'scf:app': 'my-app',
+  'scf:environment': 'prod',
+  'scf:tool': 'scf-deploy',
+  'scf:domain': 'example.com',
+  'scf:auto-created': 'true'  // If created automatically
+}
+
+// Example tags on Route53 hosted zone
+{
+  'scf:managed': 'true',
+  'scf:app': 'my-app',
+  'scf:environment': 'prod',
+  'scf:tool': 'scf-deploy',
+  'scf:domain': 'example.com'
+}
+```
+
+This comprehensive tagging enables:
+
+- 🔍 **Resource Discovery** - Find all resources without state files
+- 🗑️ **Complete Deletion** - Remove command finds all related resources
+- 📊 **Cost Tracking** - Filter AWS costs by `scf:app` or `scf:environment`
+- 🛡️ **Safety** - Prevent accidental deletion of non-SCF resources
 
 ### Incremental Deployment
 
@@ -786,7 +947,7 @@ const config: SCFConfig = {
   cloudfront: {
     enabled: true,
     customDomain: {
-      domainName: "myapp.com",  // SSL certificate created automatically!
+      domainName: "myapp.com", // SSL certificate created automatically!
     },
   },
 };
@@ -834,7 +995,7 @@ const config: SCFConfig = {
 
   cloudfront: {
     enabled: true,
-    priceClass: "PriceClass_All",  // Global coverage
+    priceClass: "PriceClass_All", // Global coverage
 
     customDomain: {
       domainName: "www.example.com",
@@ -957,14 +1118,39 @@ scf-deploy deploy --env prod
 
 ### Route53 Hosted Zone Not Found
 
-```bash
-# Error: Route53 Hosted Zone not found for domain: example.com
-# Solution: Create Route53 hosted zone
+**NEW in v0.5.0**: Hosted zones are now created automatically!
 
+```bash
+# scf-deploy now automatically creates hosted zones if they don't exist
+$ scf-deploy deploy --env prod
+
+⚠ Route53 hosted zone not found for example.com
+  Creating public hosted zone automatically...
+
+✓ Hosted zone created: Z123456789ABC
+
+  Name servers (update at your domain registrar):
+  - ns-123.awsdns-12.com
+  - ns-456.awsdns-45.net
+  - ns-789.awsdns-78.org
+  - ns-012.awsdns-01.co.uk
+```
+
+**After automatic creation:**
+
+1. Copy the nameservers displayed in the output
+2. Log into your domain registrar (GoDaddy, Namecheap, etc.)
+3. Update your domain's nameservers to the Route53 nameservers
+4. Wait for DNS propagation (5 minutes to 48 hours)
+5. Retry deployment - certificate validation will complete once DNS propagates
+
+**Manual hosted zone creation (if preferred):**
+
+```bash
 # 1. Go to AWS Route53 Console
 # 2. Create hosted zone for your domain
 # 3. Update domain nameservers to Route53 nameservers
-# 4. Retry deployment
+# 4. Deploy with scf-deploy
 
 # Or use manual certificate:
 cloudfront: {
@@ -1060,9 +1246,17 @@ cloudfront: {
         "acm:RequestCertificate",
         "acm:DescribeCertificate",
         "acm:ListCertificates",
+        "acm:DeleteCertificate",
+        "acm:ListTagsForCertificate",
         "route53:ListHostedZones",
+        "route53:GetHostedZone",
+        "route53:CreateHostedZone",
+        "route53:DeleteHostedZone",
         "route53:ChangeResourceRecordSets",
-        "route53:GetChange"
+        "route53:ListResourceRecordSets",
+        "route53:GetChange",
+        "route53:ChangeTagsForResource",
+        "route53:ListTagsForResource"
       ],
       "Resource": "*"
     }
@@ -1070,7 +1264,18 @@ cloudfront: {
 }
 ```
 
-**Note:** Tagging permissions are required for the state recovery feature.
+**Enhanced Permissions Explained** (v0.5.0):
+
+- `acm:DeleteCertificate` - For `remove` command to delete certificates
+- `acm:ListTagsForCertificate` - For resource discovery and recovery
+- `route53:CreateHostedZone` - For automatic hosted zone creation
+- `route53:DeleteHostedZone` - For `remove` command to delete zones
+- `route53:ListResourceRecordSets` - For DNS record management
+- `route53:ChangeTagsForResource` - For tagging hosted zones
+- `route53:ListTagsForResource` - For resource discovery
+- `route53:GetHostedZone` - For nameserver retrieval
+
+**Note:** Tagging permissions are required for the enhanced state recovery and resource discovery features.
 
 ## Best Practices
 
@@ -1165,6 +1370,7 @@ git push origin main
 ```
 
 This will automatically run:
+
 1. **📦 Build Check** - Ensures the project builds without errors
 2. **🔍 Lint Check** - Ensures code follows style guidelines
 3. **🧪 Unit Tests** - Runs all 143 unit tests
@@ -1227,15 +1433,15 @@ src/__tests__/
 
 Current test coverage for core modules:
 
-| Module           | Coverage |
-| ---------------- | -------- |
-| Config Schema    | 100%     |
-| Config Merger    | 100%     |
-| Config Loader    | 91.66%   |
-| File Scanner     | 100%     |
-| State Manager    | 93.1%    |
-| ACM Manager      | 85%      |
-| Route53 Manager  | 88%      |
+| Module          | Coverage |
+| --------------- | -------- |
+| Config Schema   | 100%     |
+| Config Merger   | 100%     |
+| Config Loader   | 91.66%   |
+| File Scanner    | 100%     |
+| State Manager   | 93.1%    |
+| ACM Manager     | 85%      |
+| Route53 Manager | 88%      |
 
 **Total Unit Tests**: 143 tests
 
@@ -1295,20 +1501,43 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 ## Changelog
 
-### v0.5.0 (2025-01-XX)
+### v0.5.0
 
-**🔐 Automatic SSL Certificate Creation**
+**🔐 SSL & Custom Domain Automation**
 
 - ✨ Zero-configuration HTTPS for custom domains
 - ✨ Automatic ACM certificate creation and validation
 - ✨ Route53 DNS validation record automation
+- ✨ **Automatic Route53 hosted zone creation** (NEW!)
+- ✨ **CloudFront A/AAAA alias record creation** (NEW!)
 - ✨ Certificate reuse detection
 - ✨ Domain ownership verification
 - 📝 certificateArn is now optional
+
+**📦 Enhanced Resource Management**
+
+- ✨ **Tag-based resource discovery system** - Find resources without state files
+- ✨ **Comprehensive resource tagging** - All AWS resources tagged (S3, CloudFront, ACM, Route53)
+- ✨ **Enhanced recover command** - Now discovers ACM certificates and Route53 hosted zones
+- ✨ **Complete remove command** - Delete ACM certificates and Route53 hosted zones
+- ✨ **Resource listing** - View all SCF-managed resources with `recover --all`
+- 🗑️ Remove command now works without state files (tag-based discovery)
+
+**🧪 Testing & Quality**
+
 - 🧪 143 unit tests (was 130)
+- ✅ Comprehensive test coverage for new features
+- 🔨 Husky pre-push hooks for build, lint, and test checks
 
 **Breaking Changes:**
+
 - None - fully backward compatible
+
+**Migration Notes:**
+
+- Existing deployments will be automatically tagged on next deployment
+- No action required - all features work with existing resources
+- Recover command can now discover more resources (ACM, Route53)
 
 ## Links
 
