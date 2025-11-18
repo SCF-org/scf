@@ -8,6 +8,7 @@ import { discoverAndLoadConfig, loadConfigFile } from './loader.js';
 import { mergeEnvironment, applyProfileOverride } from './merger.js';
 import { validateConfig } from './schema.js';
 import { validateRequiredFields } from './utils.js';
+import { loadEnvFiles } from './env-loader.js';
 
 /**
  * Load and validate SCF configuration
@@ -33,6 +34,11 @@ export async function loadConfig(
   const { configPath, env, profile } = options;
 
   try {
+    // Step 0: Load environment variables from .env files
+    // This must happen BEFORE loading config file so that
+    // scf.config.ts can reference process.env variables
+    loadEnvFiles(env);
+
     // Step 1: Load config file
     let rawConfig: SCFConfig;
     let resolvedConfigPath: string;

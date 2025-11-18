@@ -195,6 +195,115 @@ const config: SCFConfig = {
 export default config;
 ```
 
+### Environment Variables
+
+scf-deploy supports environment-specific variables through `.env` files. This is the **recommended way** to manage sensitive information like AWS credentials and custom domain certificates.
+
+#### How It Works
+
+Environment variables are loaded automatically before config file execution:
+
+1. **Default**: `.env` and `.env.local` (no `--env` flag)
+2. **Development**: `.env.dev` and `.env.dev.local` (use `--env dev`)
+3. **Production**: `.env.prod` and `.env.prod.local` (use `--env prod`)
+
+**Loading Priority** (highest to lowest):
+```
+.env.{environment}.local  (e.g., .env.prod.local)
+.env.{environment}         (e.g., .env.prod)
+.env.local
+.env
+```
+
+#### Setup
+
+**1. Create environment files:**
+
+```bash
+# .env.dev
+AWS_REGION=us-east-1
+S3_BUCKET_NAME=my-app-bucket-dev
+CLOUDFRONT_ENABLED=false
+
+# .env.prod
+AWS_REGION=us-east-1
+S3_BUCKET_NAME=my-app-bucket-prod
+CLOUDFRONT_ENABLED=true
+CLOUDFRONT_DOMAIN=www.example.com
+ACM_CERTIFICATE_ARN=arn:aws:acm:us-east-1:123456789012:certificate/xxx
+```
+
+**2. Use in `scf.config.ts`:**
+
+```typescript
+import type { SCFConfig } from "scf-deploy";
+
+const config: SCFConfig = {
+  app: process.env.APP_NAME || "my-app",
+  region: process.env.AWS_REGION || "us-east-1",
+
+  s3: {
+    bucketName: process.env.S3_BUCKET_NAME || "my-app-bucket",
+    indexDocument: "index.html",
+  },
+
+  cloudfront: {
+    enabled: process.env.CLOUDFRONT_ENABLED === "true",
+    customDomain: process.env.CLOUDFRONT_DOMAIN
+      ? {
+          domainName: process.env.CLOUDFRONT_DOMAIN,
+          certificateArn: process.env.ACM_CERTIFICATE_ARN,
+        }
+      : undefined,
+  },
+};
+
+export default config;
+```
+
+**3. Deploy with environment:**
+
+```bash
+# Development (loads .env.dev)
+scf-deploy deploy --env dev
+
+# Production (loads .env.prod)
+scf-deploy deploy --env prod
+```
+
+#### Security Best Practices
+
+- ✅ **Always** add `.env*` to `.gitignore`
+- ✅ Use `.env.example` files to document required variables
+- ✅ Store sensitive values (AWS keys, certificate ARNs) in `.env` files
+- ❌ **Never** commit actual `.env` files to git
+- ✅ Use `.env.local` for local overrides that shouldn't be shared
+
+#### Example Files
+
+Check your project root for:
+- `.env.example` - Template with all available variables
+- `.env.dev.example` - Development environment template
+- `.env.prod.example` - Production environment template
+
+Copy these to create your actual `.env` files:
+```bash
+cp .env.example .env
+cp .env.dev.example .env.dev
+cp .env.prod.example .env.prod
+```
+
+#### Missing Environment File Warning
+
+If you use `--env` flag but the corresponding `.env` file doesn't exist, scf-deploy will show a warning:
+
+```bash
+$ scf-deploy deploy --env dev
+  ⚠ Warning: .env.dev file not found. Using default values from scf.config.ts
+```
+
+This is just a warning - deployment will continue using the default values defined in `scf.config.ts`.
+
 ### Build Directory Auto-Detection
 
 scf-deploy automatically detects your build directory by searching for:

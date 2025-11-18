@@ -1,6 +1,7 @@
-# Environment
-.env
-.env.local
+# Environment variables (sensitive data)
+.env*
+!.env.example
+!.env*.example
 
 # Claude Code
 .claude
