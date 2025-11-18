@@ -412,6 +412,7 @@ export class Route53Manager {
   /**
    * Ensure that hosted zone exists and is accessible.
    * If not found, automatically creates a public hosted zone for the domain.
+   * For subdomains, requires parent zone to exist (won't auto-create subdomain zones).
    */
   async validateHostedZone(
     domain: string,
@@ -421,6 +422,22 @@ export class Route53Manager {
     let zone = await this.findHostedZone(domain);
 
     if (!zone) {
+      // Check if this is a subdomain (more than 2 parts)
+      const domainParts = domain.replace(/\.$/, "").split(".");
+      const isSubdomain = domainParts.length > 2;
+
+      if (isSubdomain) {
+        const parentDomain = domainParts.slice(-2).join(".");
+        throw new Error(
+          `No hosted zone found for ${domain}\n\n` +
+            `This appears to be a subdomain. Please ensure:\n` +
+            `  - Parent domain (${parentDomain}) has a hosted zone in Route53\n` +
+            `  - Or create the parent hosted zone first\n\n` +
+            `Tip: Run 'scf deploy' with the parent domain (${parentDomain}) first,\n` +
+            `     then deploy your subdomain.`
+        );
+      }
+
       console.log();
       console.log(
         chalk.yellow("⚠"),
