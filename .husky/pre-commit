@@ -1,0 +1,13 @@
+echo "🔍 Running lint check..."
+echo ""
+
+npm run lint
+if [ $? -ne 0 ]; then
+  echo ""
+  echo "❌ Lint failed! Please fix lint errors before committing."
+  echo "💡 Tip: Run 'npm run lint:fix' to auto-fix some issues."
+  exit 1
+fi
+
+echo "✅ Lint passed!"
+echo ""
