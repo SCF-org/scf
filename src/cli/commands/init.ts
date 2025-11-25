@@ -29,6 +29,12 @@ const AWS_REGIONS = [
 function generateConfigContent(answers: InitAnswers): string {
   const { app, region, bucketName, enableCloudFront } = answers;
 
+  // Generate UUID for bucket name uniqueness (already included in bucketName from prompt)
+  // Extract base name and UUID if already present, or generate new UUID
+  const uuidMatch = bucketName.match(/-([a-f0-9]{8})$/);
+  const uuid = uuidMatch ? uuidMatch[1] : Math.random().toString(16).substring(2, 10);
+  const baseBucketName = uuidMatch ? bucketName.slice(0, -9) : bucketName;
+
   return `/**
  * SCF Deploy Configuration
  *
@@ -74,14 +80,14 @@ const config: SCFConfig = {
   // Environment-specific overrides
   environments: {
     dev: {
-      s3: { bucketName: '${bucketName}-dev' },
+      s3: { bucketName: '${baseBucketName}-dev-${uuid}' },
       cloudfront: { enabled: false },
     },
     staging: {
-      s3: { bucketName: '${bucketName}-staging' },
+      s3: { bucketName: '${baseBucketName}-staging-${uuid}' },
     },
     prod: {
-      s3: { bucketName: '${bucketName}-prod' },
+      s3: { bucketName: '${baseBucketName}-prod-${uuid}' },
     },
   },
 };
@@ -92,11 +98,12 @@ export default config;
 
 async function promptUser(interactive: boolean): Promise<InitAnswers> {
   if (!interactive) {
-    // Non-interactive mode: use defaults
+    // Non-interactive mode: use defaults with UUID for uniqueness
+    const uuid = Math.random().toString(16).substring(2, 10);
     return {
       app: "my-app",
       region: "us-east-1",
-      bucketName: "my-app-bucket",
+      bucketName: `my-app-bucket-${uuid}`,
       enableCloudFront: true,
     };
   }
@@ -126,7 +133,10 @@ async function promptUser(interactive: boolean): Promise<InitAnswers> {
       type: "input",
       name: "bucketName",
       message: "S3 Bucket name:",
-      default: (answers: Partial<InitAnswers>) => `${answers.app}-bucket`,
+      default: (answers: Partial<InitAnswers>) => {
+        const uuid = Math.random().toString(16).substring(2, 10);
+        return `${answers.app}-bucket-${uuid}`;
+      },
       validate: (input: string) => {
         if (!input.trim()) return "Bucket name is required";
         if (!/^[a-z0-9-]+$/.test(input))
