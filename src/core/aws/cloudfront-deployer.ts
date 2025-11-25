@@ -25,6 +25,8 @@ import {
   getOrCreateState,
   updateCloudFrontResource,
   getCloudFrontResource,
+  updateACMResource,
+  updateRoute53Resource,
 } from "../state/index.js";
 import { ACMManager } from "./acm-manager.js";
 import { Route53Manager } from "./route53-manager.js";
@@ -97,6 +99,14 @@ export async function deployToCloudFront(
   let route53ManagerRef: Route53Manager | null = null;
   let hostedZoneCreated = false;
   let certificateRequestedNew = false;
+
+  // Variables for state saving (ACM/Route53)
+  let certificateArnForState: string | null = null;
+  let domainNameForState: string | null = null;
+  let aliasesForState: string[] | undefined = undefined;
+  let hostedZoneIdForState: string | null = null;
+  let hostedZoneNameForState: string | null = null;
+  let nameServersForState: string[] = [];
 
   // Step 0: Auto-create SSL certificate if customDomain is set but certificateArn is missing
   if (
@@ -227,6 +237,18 @@ export async function deployToCloudFront(
 
       // Update config with certificate ARN
       cloudFrontConfig.customDomain.certificateArn = certificateArn;
+
+      // Store ACM/Route53 info for state saving
+      certificateArnForState = certificateArn;
+      domainNameForState = domainName;
+      aliasesForState = aliases;
+      hostedZoneIdForState = cleanZoneId;
+      hostedZoneNameForState = domainName;
+      try {
+        nameServersForState = await route53Manager.getNameServers(cleanZoneId);
+      } catch {
+        nameServersForState = [];
+      }
 
       console.log();
       console.log(
@@ -561,6 +583,24 @@ export async function deployToCloudFront(
         );
       }
 
+      // Capture Route53 info for state (if not already captured from auto-create flow)
+      if (!hostedZoneIdForState) {
+        hostedZoneIdForState = hostedZoneId;
+        hostedZoneNameForState = cloudFrontConfig.customDomain.domainName;
+        try {
+          nameServersForState = await route53Manager.getNameServers(hostedZoneId);
+        } catch {
+          nameServersForState = [];
+        }
+      }
+
+      // Capture ACM info for state (if manually configured and not already captured)
+      if (!certificateArnForState && cloudFrontConfig.customDomain.certificateArn) {
+        certificateArnForState = cloudFrontConfig.customDomain.certificateArn;
+        domainNameForState = cloudFrontConfig.customDomain.domainName;
+        aliasesForState = cloudFrontConfig.customDomain.aliases;
+      }
+
       console.log(
         chalk.green('✓'),
         chalk.gray('DNS A/AAAA alias records created for custom domain(s)')
@@ -631,6 +671,25 @@ export async function deployToCloudFront(
       distributionUrl,
       aliases: cloudFrontConfig.customDomain?.aliases,
     });
+
+    // Update ACM resource info (if certificate was used)
+    if (certificateArnForState && domainNameForState) {
+      state = updateACMResource(state, {
+        certificateArn: certificateArnForState,
+        domainName: domainNameForState,
+        status: 'ISSUED',
+        alternativeNames: aliasesForState,
+      });
+    }
+
+    // Update Route53 resource info (if hosted zone was used)
+    if (hostedZoneIdForState && hostedZoneNameForState) {
+      state = updateRoute53Resource(state, {
+        hostedZoneId: hostedZoneIdForState,
+        hostedZoneName: hostedZoneNameForState,
+        nameServers: nameServersForState,
+      });
+    }
 
     // Save state
     try {

@@ -56,6 +56,18 @@ export {
   hasAnyResource,
   getResourceIdentifiers,
   validateResourceState,
+  // ACM resource state
+  updateACMResource,
+  getACMResource,
+  hasACMResource,
+  removeACMResource,
+  createACMResourceState,
+  // Route53 resource state
+  updateRoute53Resource,
+  getRoute53Resource,
+  hasRoute53Resource,
+  removeRoute53Resource,
+  createRoute53ResourceState,
 } from './resource-state.js';
 
 // Re-export types
@@ -63,6 +75,8 @@ export type {
   DeploymentState,
   S3ResourceState,
   CloudFrontResourceState,
+  ACMResourceState,
+  Route53ResourceState,
   ResourcesState,
   FileHashMap,
   FileChange,
