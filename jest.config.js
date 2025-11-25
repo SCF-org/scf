@@ -37,6 +37,7 @@ export default {
       statements: 70,
     },
   },
+  setupFiles: ['<rootDir>/src/__tests__/setup.ts'],
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   testTimeout: 30000, // E2E 테스트를 위해 30초로 설정
   globalSetup: '<rootDir>/jest.global-setup.js',

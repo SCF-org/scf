@@ -48,7 +48,7 @@
     "test": "NODE_OPTIONS=--experimental-vm-modules jest",
     "test:unit": "NODE_OPTIONS=--experimental-vm-modules jest src/__tests__/unit",
     "test:integration": "NODE_OPTIONS=--experimental-vm-modules jest src/__tests__/integration",
-    "test:e2e": "E2E_TEST=true NODE_OPTIONS=--experimental-vm-modules jest src/__tests__/e2e",
+    "test:e2e": "E2E_TEST=true AWS_SDK_LOAD_CONFIG=1 NODE_OPTIONS=--experimental-vm-modules jest src/__tests__/e2e --runInBand",
     "test:cli": "NODE_OPTIONS=--experimental-vm-modules jest src/__tests__/cli",
     "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --watch",
     "test:coverage": "NODE_OPTIONS=--experimental-vm-modules jest --coverage",
