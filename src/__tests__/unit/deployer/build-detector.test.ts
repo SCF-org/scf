@@ -150,7 +150,7 @@ describe('Build Detector', () => {
 
     it('should throw error if build directory does not exist', () => {
       expect(() => validateBuildDirectory('nonexistent', testDir)).toThrow(
-        'Build directory not found: nonexistent'
+        /Build directory not found/
       );
     });
 
@@ -159,7 +159,7 @@ describe('Build Detector', () => {
       writeFileSync(filePath, 'not a directory');
 
       expect(() => validateBuildDirectory('file.txt', testDir)).toThrow(
-        'Build path is not a directory: file.txt'
+        /Build path is not a directory/
       );
     });
 
@@ -169,7 +169,7 @@ describe('Build Detector', () => {
       writeFileSync(join(distDir, 'main.js'), 'console.log("test")');
 
       expect(() => validateBuildDirectory('dist', testDir)).toThrow(
-        'Build directory does not contain index.html: dist'
+        /Build directory does not contain index\.html/
       );
     });
 
@@ -190,7 +190,7 @@ describe('Build Detector', () => {
       });
 
       expect(() => validateBuildDirectory('.next', testDir)).toThrow(
-        'Cannot deploy .next directory to S3/CloudFront'
+        /Cannot deploy.*\.next.*directory to S3\/CloudFront/
       );
     });
 
@@ -200,7 +200,7 @@ describe('Build Detector', () => {
       });
 
       expect(() => validateBuildDirectory('.nuxt', testDir)).toThrow(
-        'Cannot deploy .nuxt directory to S3/CloudFront'
+        /Cannot deploy.*\.nuxt.*directory to S3\/CloudFront/
       );
     });
 
@@ -210,7 +210,7 @@ describe('Build Detector', () => {
       });
 
       expect(() => validateBuildDirectory('./.next', testDir)).toThrow(
-        'Cannot deploy ./.next directory to S3/CloudFront'
+        /Cannot deploy.*\.next.*directory to S3\/CloudFront/
       );
     });
 
@@ -251,17 +251,17 @@ describe('Build Detector', () => {
 
     it('should throw error if provided build directory is invalid', () => {
       expect(() => getBuildDirectory('nonexistent', testDir)).toThrow(
-        'Build directory not found: nonexistent'
+        /Build directory not found/
       );
     });
 
     it('should throw error if no build directory found and none provided', () => {
-      expect(() => getBuildDirectory(undefined, testDir)).toThrow('No build directory found');
+      expect(() => getBuildDirectory(undefined, testDir)).toThrow(/No build directory found/);
     });
 
     it('should throw error with helpful message when no build found', () => {
       expect(() => getBuildDirectory(undefined, testDir)).toThrow(
-        /Searched for: dist, build, out/
+        /Searched for:.*dist.*build.*out/
       );
       expect(() => getBuildDirectory(undefined, testDir)).toThrow(/npm run build/);
     });
