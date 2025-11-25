@@ -6,9 +6,9 @@
 
 Automate static website deployment to AWS S3 and CloudFront with a simple, powerful CLI tool.
 
-**Current Version:** 0.5.0
+**Current Version:** 1.0.0
 
-> **What's New in v0.5.0**: Automatic SSL certificates, Route53 hosted zone creation, enhanced resource recovery with ACM/Route53 support, and complete resource deletion with tag-based discovery!
+> **What's New in v1.0.0**: Production-ready release with 360+ tests, GitHub Actions CI/CD, enhanced Husky hooks, and comprehensive documentation!
 
 ## Table of Contents
 
@@ -1470,27 +1470,46 @@ cloudfront: {
 
 ## Git Hooks (Husky)
 
-SCF uses Husky to ensure code quality before pushing to the repository. When you try to push, the following checks run automatically:
+SCF uses Husky to ensure code quality at different stages of development.
+
+### Pre-Commit Checks
+
+When you commit, the following check runs automatically:
+
+```bash
+git commit -m "your message"
+```
+
+This will run:
+
+1. **🔍 Lint Check** - Ensures code follows style guidelines
 
 ### Pre-Push Checks
+
+When you push, comprehensive checks run automatically:
 
 ```bash
 git push origin main
 ```
 
-This will automatically run:
+This will run:
 
 1. **📦 Build Check** - Ensures the project builds without errors
 2. **🔍 Lint Check** - Ensures code follows style guidelines
-3. **🧪 Unit Tests** - Runs all 143 unit tests
+3. **🧪 Unit Tests** - Runs all 256 unit tests
+4. **🔗 Integration Tests** - Runs all 104 integration tests
 
 If any check fails, the push will be blocked. You must fix the issues before pushing.
 
 ### Manual Check
 
-You can run the pre-push checks manually:
+You can run the checks manually:
 
 ```bash
+# Pre-commit check
+.husky/pre-commit
+
+# Pre-push check
 .husky/pre-push
 ```
 
@@ -1499,6 +1518,7 @@ You can run the pre-push checks manually:
 In emergency situations, you can bypass the checks:
 
 ```bash
+git commit --no-verify -m "message"
 git push --no-verify
 ```
 
@@ -1506,7 +1526,7 @@ git push --no-verify
 
 ## Testing
 
-SCF uses Jest as the testing framework with comprehensive unit tests for core functionality.
+SCF uses Jest as the testing framework with comprehensive test coverage across unit, integration, and E2E tests.
 
 ### Running Tests
 
@@ -1514,8 +1534,14 @@ SCF uses Jest as the testing framework with comprehensive unit tests for core fu
 # Run all tests
 npm test
 
-# Run only unit tests
+# Run only unit tests (256 tests)
 npm run test:unit
+
+# Run integration tests (104 tests)
+npm run test:integration
+
+# Run E2E tests (requires AWS credentials)
+npm run test:e2e
 
 # Run tests in watch mode
 npm run test:watch
@@ -1528,15 +1554,31 @@ npm run test:coverage
 
 ```
 src/__tests__/
-├── unit/              # Unit tests for core modules
+├── unit/              # Unit tests for core modules (256 tests)
 │   ├── aws/           # ACM, Route53, CloudFront, S3 managers
 │   ├── config/        # Config parsing, validation, merging
 │   ├── deployer/      # File scanning, hashing
 │   └── state/         # State management
-├── integration/       # Integration tests (future)
-├── e2e/              # End-to-end tests (future)
+├── integration/       # Integration tests (104 tests)
+│   ├── aws/           # AWS service integration tests
+│   ├── config/        # Config loading integration
+│   └── deployer/      # Deployment workflow tests
+├── e2e/              # End-to-end tests (real AWS resources)
+│   ├── s3.e2e.test.ts
+│   ├── cloudfront.e2e.test.ts
+│   ├── acm.e2e.test.ts
+│   └── route53.e2e.test.ts
 └── fixtures/          # Test data and config files
 ```
+
+### Test Types
+
+| Type | Count | Description |
+| ---- | ----- | ----------- |
+| Unit Tests | 256 | Fast, isolated tests with mocked dependencies |
+| Integration Tests | 104 | Tests for module interactions with mocked AWS |
+| E2E Tests | Variable | Real AWS resource tests (requires credentials) |
+| **Total** | **360+** | Comprehensive test coverage |
 
 ### Test Coverage
 
@@ -1551,8 +1593,6 @@ Current test coverage for core modules:
 | State Manager   | 93.1%    |
 | ACM Manager     | 85%      |
 | Route53 Manager | 88%      |
-
-**Total Unit Tests**: 143 tests
 
 ### Writing Tests
 
@@ -1594,6 +1634,62 @@ Coverage reports are generated in:
 - **HTML**: `coverage/index.html` (open in browser)
 - **LCOV**: `coverage/lcov-report/` (for CI/CD tools)
 
+## CI/CD (GitHub Actions)
+
+SCF uses GitHub Actions for automated testing on every PR and merge.
+
+### PR Workflow
+
+When a Pull Request is created or updated:
+
+```yaml
+# .github/workflows/pr.yml
+- Build project
+- Run linter
+- Run unit tests (256 tests)
+- Run integration tests (104 tests)
+```
+
+### Main Branch Workflow
+
+When code is merged to main:
+
+```yaml
+# .github/workflows/main.yml
+- Build project
+- Run linter
+- Run unit tests
+- Run integration tests
+- Run E2E tests (real AWS resources)
+```
+
+### Setting Up GitHub Secrets
+
+For E2E tests to run in GitHub Actions, you need to configure AWS credentials:
+
+1. Go to your repository **Settings** > **Secrets and variables** > **Actions**
+2. Add the following secrets:
+
+| Secret Name | Description |
+| ----------- | ----------- |
+| `AWS_ACCESS_KEY_ID` | AWS access key with required permissions |
+| `AWS_SECRET_ACCESS_KEY` | AWS secret access key |
+
+**Required IAM Permissions for E2E Tests:**
+- S3: CreateBucket, DeleteBucket, PutObject, GetObject, DeleteObject
+- CloudFront: CreateDistribution, GetDistribution, DeleteDistribution
+- ACM: RequestCertificate, DescribeCertificate, DeleteCertificate
+- Route53: CreateHostedZone, DeleteHostedZone, ChangeResourceRecordSets
+
+### Local vs CI Testing
+
+| Environment | Unit | Integration | E2E |
+| ----------- | ---- | ----------- | --- |
+| Pre-commit (local) | - | - | - |
+| Pre-push (local) | ✅ | ✅ | - |
+| PR (GitHub) | ✅ | ✅ | - |
+| Main merge (GitHub) | ✅ | ✅ | ✅ |
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
@@ -1609,6 +1705,35 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 MIT License - see [LICENSE](LICENSE) file for details
 
 ## Changelog
+
+### v1.0.0
+
+**🎉 Production Ready Release**
+
+- 🚀 First stable production release
+- 🧪 360+ comprehensive tests (256 unit + 104 integration + E2E)
+- 🔄 GitHub Actions CI/CD pipelines (PR + Main workflows)
+- 🐶 Enhanced Husky hooks (pre-commit + pre-push with 4-step validation)
+- 📝 Comprehensive documentation updates
+
+**🧪 Testing Infrastructure**
+
+- ✨ 256 unit tests with mocked dependencies
+- ✨ 104 integration tests for module interactions
+- ✨ E2E tests with real AWS resources (S3, CloudFront, ACM, Route53)
+- ✨ Automated test execution in CI/CD
+
+**🔄 CI/CD Pipeline**
+
+- ✨ PR workflow: Build → Lint → Unit → Integration
+- ✨ Main workflow: Full test suite including E2E
+- ✨ GitHub Secrets integration for AWS credentials
+
+**Breaking Changes:**
+
+- None - fully backward compatible with v0.5.0
+
+---
 
 ### v0.5.0
 
