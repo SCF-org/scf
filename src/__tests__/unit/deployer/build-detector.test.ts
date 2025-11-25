@@ -169,7 +169,7 @@ describe('Build Detector', () => {
       writeFileSync(join(distDir, 'main.js'), 'console.log("test")');
 
       expect(() => validateBuildDirectory('dist', testDir)).toThrow(
-        /Build directory does not contain index\.html/
+        /Build directory does not contain.*index\.html/
       );
     });
 
