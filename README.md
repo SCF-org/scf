@@ -6,9 +6,9 @@
 
 Automate static website deployment to AWS S3 and CloudFront with a simple, powerful CLI tool.
 
-**Current Version:** 1.0.0
+**Current Version:** 1.1.0
 
-> **What's New in v1.0.0**: Production-ready release with 360+ tests, GitHub Actions CI/CD, enhanced Husky hooks, and comprehensive documentation!
+> **What's New in v1.1.0**: SPA mode enabled by default! CloudFront now automatically redirects 403/404 errors to `index.html` for client-side routing (React Router, Vue Router, etc.). Use `spa: false` for static HTML sites.
 
 ## Table of Contents
 
@@ -16,6 +16,7 @@ Automate static website deployment to AWS S3 and CloudFront with a simple, power
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
+  - [SPA Mode](#spa-mode-single-page-application)
 - [Automatic SSL Certificate Creation](#automatic-ssl-certificate-creation)
 - [Commands](#commands)
   - [init](#init)
@@ -63,6 +64,7 @@ Automate static website deployment to AWS S3 and CloudFront with a simple, power
 ### ☁️ CloudFront & Performance
 
 - **CloudFront Integration**: Automatic cache invalidation after deployment
+- **SPA Mode (Default)**: Automatic 403/404 → index.html redirect for client-side routing
 - **Cache Warming**: Pre-warm edge locations to eliminate cold start latency
 - **Custom Domains**: Built-in support for custom domains with automatic SSL
 - **CDN Optimization**: Configurable price classes and TTL settings
@@ -337,6 +339,64 @@ module.exports = {
 # Then build
 npm run build
 # Creates ./out directory with static files
+```
+
+### SPA Mode (Single Page Application)
+
+CloudFront is configured with **SPA mode enabled by default** (`spa: true`). This automatically redirects 403/404 errors to `index.html` with a 200 status code, enabling client-side routing for React Router, Vue Router, Angular Router, etc.
+
+```typescript
+import type { SCFConfig } from "scf-deploy";
+
+const config: SCFConfig = {
+  app: "my-spa-app",
+  region: "us-east-1",
+
+  s3: {
+    bucketName: "my-spa-bucket",
+  },
+
+  cloudfront: {
+    enabled: true,
+    // SPA mode is true by default - no configuration needed!
+    // spa: true,  // Redirect 403/404 to index.html (default)
+  },
+};
+
+export default config;
+```
+
+**How SPA Mode Works:**
+
+When `spa: true` (default):
+- 403 errors (Access Denied) → `/index.html` with 200 status
+- 404 errors (Not Found) → `/index.html` with 200 status
+- Client-side routing handles the actual URL
+
+**For Static HTML Sites (disable SPA mode):**
+
+If you have a traditional static site that needs to show actual 404 error pages:
+
+```typescript
+cloudfront: {
+  enabled: true,
+  spa: false,  // Disable SPA mode - return default 404 errors
+}
+```
+
+**Custom Error Pages (advanced):**
+
+For fine-grained control, use `errorPages` configuration:
+
+```typescript
+cloudfront: {
+  enabled: true,
+  spa: false,  // Disable default SPA behavior
+  errorPages: [
+    { errorCode: 404, responsePath: '/404.html', responseCode: 404, cacheTTL: 300 },
+    { errorCode: 403, responsePath: '/403.html', responseCode: 403, cacheTTL: 300 },
+  ],
+}
 ```
 
 ### Environment-Specific Configuration
@@ -1081,6 +1141,7 @@ const config: SCFConfig = {
   },
   cloudfront: {
     enabled: true,
+    spa: false, // Disable SPA mode - show actual 404 pages for missing URLs
   },
 };
 
@@ -1705,6 +1766,32 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 MIT License - see [LICENSE](LICENSE) file for details
 
 ## Changelog
+
+### v1.1.0
+
+**🌐 SPA Mode & Client-Side Routing Support**
+
+- ✨ **SPA Mode (Default Enabled)**: CloudFront now automatically redirects 403/404 errors to `index.html` with 200 status
+- ✨ **Client-Side Routing Support**: Works out of the box with React Router, Vue Router, Angular Router, etc.
+- ✨ **Configurable SPA Mode**: Use `spa: false` to disable for static HTML sites that need actual 404 pages
+- ✨ **Custom Error Pages**: New `errorPages` configuration for fine-grained control
+- 📝 **Init Template Updated**: SPA mode option now documented in generated `scf.config.ts`
+
+**How It Works:**
+
+```typescript
+cloudfront: {
+  enabled: true,
+  // spa: true,   // Default - redirect 403/404 to index.html (SPA)
+  // spa: false,  // Disable SPA mode for static HTML sites
+}
+```
+
+**Breaking Changes:**
+
+- None - existing deployments continue to work. SPA mode is additive and enabled by default.
+
+---
 
 ### v1.0.0
 
