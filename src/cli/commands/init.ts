@@ -55,6 +55,10 @@ const config: SCFConfig = {
 
   cloudfront: {
     enabled: ${enableCloudFront},
+    // SPA mode (default: true)
+    // - true: Redirect 403/404 to index.html (React, Vue, Angular, etc.)
+    // - false: Return default 404 error (static HTML sites that need 404 page)
+    // spa: true,
     // priceClass: 'PriceClass_100',
     // Cache warming: warm up edge locations after deployment (incurs data transfer costs)
     // cacheWarming: {

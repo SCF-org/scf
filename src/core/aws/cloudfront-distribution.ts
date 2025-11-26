@@ -20,6 +20,16 @@ import {
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
 
 /**
+ * Error page configuration for CloudFront Custom Error Responses
+ */
+export interface ErrorPageConfig {
+  errorCode: number;
+  responseCode?: number;
+  responsePath?: string;
+  cacheTTL?: number;
+}
+
+/**
  * Distribution creation options
  */
 export interface CreateDistributionOptions {
@@ -36,6 +46,8 @@ export interface CreateDistributionOptions {
   maxTTL?: number;
   minTTL?: number;
   ipv6?: boolean;
+  /** Custom error responses for SPA routing */
+  errorPages?: ErrorPageConfig[];
 }
 
 /**
@@ -128,6 +140,7 @@ export async function createDistribution(
     maxTTL = 31536000, // 1 year
     minTTL = 0,
     ipv6 = true,
+    errorPages,
   } = options;
 
   const originDomain = getS3OriginDomain(s3BucketName, s3Region);
@@ -207,6 +220,19 @@ export async function createDistribution(
     };
   }
 
+  // Add custom error responses (for SPA routing)
+  if (errorPages && errorPages.length > 0) {
+    distributionConfig.CustomErrorResponses = {
+      Quantity: errorPages.length,
+      Items: errorPages.map((errorPage) => ({
+        ErrorCode: errorPage.errorCode,
+        ResponsePagePath: errorPage.responsePath,
+        ResponseCode: errorPage.responseCode?.toString(),
+        ErrorCachingMinTTL: errorPage.cacheTTL,
+      })),
+    };
+  }
+
   const command: CreateDistributionCommandInput = {
     DistributionConfig: distributionConfig,
   };
@@ -277,6 +303,19 @@ export async function updateDistribution(
       ACMCertificateArn: updates.customDomain.certificateArn,
       SSLSupportMethod: "sni-only",
       MinimumProtocolVersion: "TLSv1.2_2021",
+    };
+  }
+
+  // Update custom error responses (for SPA routing)
+  if (updates.errorPages && updates.errorPages.length > 0) {
+    currentConfig.CustomErrorResponses = {
+      Quantity: updates.errorPages.length,
+      Items: updates.errorPages.map((errorPage) => ({
+        ErrorCode: errorPage.errorCode,
+        ResponsePagePath: errorPage.responsePath,
+        ResponseCode: errorPage.responseCode?.toString(),
+        ErrorCachingMinTTL: errorPage.cacheTTL,
+      })),
     };
   }
 

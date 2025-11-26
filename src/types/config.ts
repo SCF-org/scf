@@ -146,6 +146,14 @@ export interface CloudFrontConfig {
   /** Whether to enable IPv6 */
   ipv6?: boolean;
 
+  /**
+   * Enable SPA (Single Page Application) mode
+   * When enabled, 403/404 errors are redirected to index.html with 200 status
+   * This allows client-side routing (React Router, Vue Router, etc.) to work properly
+   * @default true
+   */
+  spa?: boolean;
+
   /** Custom error responses */
   errorPages?: Array<{
     errorCode: number;

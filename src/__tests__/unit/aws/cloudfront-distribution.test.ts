@@ -306,6 +306,50 @@ describe('CloudFront Distribution Management', () => {
         'Failed to create distribution: No distribution returned'
       );
     });
+
+    it('should create distribution with custom error responses (SPA mode)', async () => {
+      cfMock.on(CreateDistributionCommand).resolves({
+        Distribution: mockDistribution,
+      });
+
+      const options: CreateDistributionOptions = {
+        s3BucketName: 'my-bucket',
+        s3Region: 'us-east-1',
+        errorPages: [
+          { errorCode: 403, responseCode: 200, responsePath: '/index.html', cacheTTL: 0 },
+          { errorCode: 404, responseCode: 200, responsePath: '/index.html', cacheTTL: 0 },
+        ],
+      };
+
+      await createDistribution(client, options);
+
+      const calls = cfMock.commandCalls(CreateDistributionCommand);
+      const config = calls[0].args[0].input.DistributionConfig;
+
+      expect(config?.CustomErrorResponses?.Quantity).toBe(2);
+      expect(config?.CustomErrorResponses?.Items?.[0]?.ErrorCode).toBe(403);
+      expect(config?.CustomErrorResponses?.Items?.[0]?.ResponseCode).toBe('200');
+      expect(config?.CustomErrorResponses?.Items?.[0]?.ResponsePagePath).toBe('/index.html');
+      expect(config?.CustomErrorResponses?.Items?.[1]?.ErrorCode).toBe(404);
+    });
+
+    it('should create distribution without error responses when not provided', async () => {
+      cfMock.on(CreateDistributionCommand).resolves({
+        Distribution: mockDistribution,
+      });
+
+      const options: CreateDistributionOptions = {
+        s3BucketName: 'my-bucket',
+        s3Region: 'us-east-1',
+      };
+
+      await createDistribution(client, options);
+
+      const calls = cfMock.commandCalls(CreateDistributionCommand);
+      const config = calls[0].args[0].input.DistributionConfig;
+
+      expect(config?.CustomErrorResponses).toBeUndefined();
+    });
   });
 
   describe('updateDistribution', () => {
@@ -443,6 +487,28 @@ describe('CloudFront Distribution Management', () => {
       await expect(
         updateDistribution(client, 'E1234567890ABC', { priceClass: 'PriceClass_All' })
       ).rejects.toThrow('Update failed');
+    });
+
+    it('should update distribution with custom error responses (SPA mode)', async () => {
+      cfMock.on(UpdateDistributionCommand).resolves({
+        Distribution: mockDistribution,
+      });
+
+      await updateDistribution(client, 'E1234567890ABC', {
+        errorPages: [
+          { errorCode: 403, responseCode: 200, responsePath: '/index.html', cacheTTL: 0 },
+          { errorCode: 404, responseCode: 200, responsePath: '/index.html', cacheTTL: 0 },
+        ],
+      });
+
+      const calls = cfMock.commandCalls(UpdateDistributionCommand);
+      const config = calls[0].args[0].input.DistributionConfig;
+
+      expect(config?.CustomErrorResponses?.Quantity).toBe(2);
+      expect(config?.CustomErrorResponses?.Items?.[0]?.ErrorCode).toBe(403);
+      expect(config?.CustomErrorResponses?.Items?.[0]?.ResponseCode).toBe('200');
+      expect(config?.CustomErrorResponses?.Items?.[0]?.ResponsePagePath).toBe('/index.html');
+      expect(config?.CustomErrorResponses?.Items?.[1]?.ErrorCode).toBe(404);
     });
   });
 

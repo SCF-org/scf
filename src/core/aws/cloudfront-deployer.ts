@@ -91,6 +91,18 @@ export async function deployToCloudFront(
   const cloudFrontConfig = config.cloudfront;
   const s3Config = config.s3;
 
+  // Apply SPA mode default errorPages (spa defaults to true)
+  const spaMode = cloudFrontConfig.spa !== false;
+  let effectiveErrorPages = cloudFrontConfig.errorPages;
+
+  if (spaMode && !effectiveErrorPages) {
+    // Default SPA routing: redirect 403/404 to index.html with 200 status
+    effectiveErrorPages = [
+      { errorCode: 403, responseCode: 200, responsePath: "/index.html", cacheTTL: 0 },
+      { errorCode: 404, responseCode: 200, responsePath: "/index.html", cacheTTL: 0 },
+    ];
+  }
+
   // Create CloudFront client
   const cfClient = createCloudFrontClient(config);
 
@@ -370,6 +382,7 @@ export async function deployToCloudFront(
           maxTTL: cloudFrontConfig.maxTTL,
           minTTL: cloudFrontConfig.minTTL,
           ipv6: cloudFrontConfig.ipv6,
+          errorPages: effectiveErrorPages,
         };
 
         distribution = await updateDistribution(
@@ -412,6 +425,7 @@ export async function deployToCloudFront(
       maxTTL: cloudFrontConfig.maxTTL,
       minTTL: cloudFrontConfig.minTTL,
       ipv6: cloudFrontConfig.ipv6,
+      errorPages: effectiveErrorPages,
     };
 
     distribution = await createDistribution(cfClient, createOptions);

@@ -83,6 +83,7 @@ const cloudfrontConfigSchema = z
     maxTTL: z.number().int().min(0).default(31536000), // 1 year
     minTTL: z.number().int().min(0).default(0),
     ipv6: z.boolean().default(true),
+    spa: z.boolean().default(true), // SPA mode: redirect 403/404 to index.html
     errorPages: z.array(errorPageSchema).optional(),
     cacheWarming: cacheWarmingSchema.optional(),
   })
