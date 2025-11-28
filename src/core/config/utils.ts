@@ -33,7 +33,7 @@ export default defineConfig({
   cloudfront: {
     enabled: false,
     priceClass: 'PriceClass_100',
-    defaultTTL: 86400,
+    // Note: TTL is managed by AWS Managed Cache Policy (CachingOptimized)
     ipv6: true,
   },
 

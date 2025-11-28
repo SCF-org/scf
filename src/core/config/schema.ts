@@ -79,9 +79,7 @@ const cloudfrontConfigSchema = z
         aliases: z.array(z.string()).optional(),
       })
       .optional(),
-    defaultTTL: z.number().int().min(0).default(86400), // 1 day
-    maxTTL: z.number().int().min(0).default(31536000), // 1 year
-    minTTL: z.number().int().min(0).default(0),
+    // Note: TTL settings removed - now managed by AWS Managed Cache Policy (CachingOptimized)
     ipv6: z.boolean().default(true),
     spa: z.boolean().default(true), // SPA mode: redirect 403/404 to index.html
     errorPages: z.array(errorPageSchema).optional(),

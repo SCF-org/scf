@@ -90,7 +90,7 @@ describe('Config Merger', () => {
         cloudfront: {
           enabled: true,
           priceClass: 'PriceClass_100',
-          defaultTTL: 3600,
+          ipv6: true,
         },
         environments: {
           prod: {
@@ -100,7 +100,7 @@ describe('Config Merger', () => {
             cloudfront: {
               enabled: true,
               priceClass: 'PriceClass_All',
-              // defaultTTL is not overridden
+              // ipv6 is not overridden
             },
           },
         },
@@ -108,7 +108,7 @@ describe('Config Merger', () => {
 
       const result = mergeEnvironment(baseConfig, 'prod');
       expect(result.cloudfront?.priceClass).toBe('PriceClass_All');
-      expect(result.cloudfront?.defaultTTL).toBe(3600); // Should preserve base value
+      expect(result.cloudfront?.ipv6).toBe(true); // Should preserve base value
       expect(result.cloudfront?.enabled).toBe(true);
     });
 

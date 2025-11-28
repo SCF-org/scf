@@ -312,34 +312,19 @@ describe("Config Schema Validation", () => {
       expect(() => validateConfig(config)).toThrow();
     });
 
-    it("should validate TTL values", () => {
+    it("should validate SPA and IPv6 options", () => {
       const config = {
         app: "test-app",
         region: "us-east-1",
         s3: { bucketName: "test-bucket", buildDir: "./dist" },
         cloudfront: {
           enabled: true,
-          defaultTTL: 3600,
-          maxTTL: 86400,
-          minTTL: 0,
+          spa: true,
+          ipv6: true,
         },
       };
 
       expect(() => validateConfig(config)).not.toThrow();
-    });
-
-    it("should reject negative TTL values", () => {
-      const config = {
-        app: "test-app",
-        region: "us-east-1",
-        s3: { bucketName: "test-bucket", buildDir: "./dist" },
-        cloudfront: {
-          enabled: true,
-          defaultTTL: -1,
-        },
-      };
-
-      expect(() => validateConfig(config)).toThrow();
     });
   });
 

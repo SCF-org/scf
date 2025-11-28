@@ -498,7 +498,7 @@ describe("CloudFront Distribution Management", () => {
       });
 
       await expect(
-        updateDistribution(client, "E1234567890ABC", { defaultTTL: 3600 })
+        updateDistribution(client, "E1234567890ABC", { priceClass: "PriceClass_All" })
       ).rejects.toThrow(
         "Distribution configuration missing DefaultCacheBehavior"
       );
