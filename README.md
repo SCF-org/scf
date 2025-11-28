@@ -6,9 +6,9 @@
 
 Automate static website deployment to AWS S3 and CloudFront with a simple, powerful CLI tool.
 
-**Current Version:** 1.1.0
+**Current Version:** 2.0.0
 
-> **What's New in v1.1.0**: SPA mode enabled by default! CloudFront now automatically redirects 403/404 errors to `index.html` for client-side routing (React Router, Vue Router, etc.). Use `spa: false` for static HTML sites.
+> **What's New in v2.0.0**: CloudFront Free tier pricing plan compatible! Now uses AWS Managed Cache Policy (CachingOptimized) instead of legacy cache settings. Switch your distribution to Free plan ($0/mo) in AWS Console to avoid unexpected charges.
 
 ## Table of Contents
 
@@ -1786,6 +1786,30 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 MIT License - see [LICENSE](LICENSE) file for details
 
 ## Changelog
+
+### v2.0.0
+
+**🆓 CloudFront Free Tier Pricing Plan Compatible**
+
+- ✨ **Cache Policy Migration**: Switched from Legacy cache settings (ForwardedValues) to AWS Managed Cache Policy (CachingOptimized)
+- ✨ **Free Tier Eligible**: Distributions are now compatible with CloudFront's new flat-rate pricing plans (Nov 2025)
+- ✨ **Pricing Plan Info**: After deployment, displays information about CloudFront pricing plans and recommends Free plan
+- 🗑️ **TTL Options Removed**: `defaultTTL`, `minTTL`, `maxTTL` config options removed (now managed by Cache Policy)
+
+**CloudFront Pricing Plans (New in Nov 2025):**
+
+| Plan | Price | Requests | Transfer |
+|------|-------|----------|----------|
+| Free | $0/mo | 1M | 100GB |
+| Pro | $15/mo | 10M | 50TB |
+| Business | $200/mo | 125M | 50TB |
+
+**Breaking Changes:**
+
+- ⚠️ **TTL options removed**: If you have `defaultTTL`, `minTTL`, or `maxTTL` in your config, please remove them
+- TTL is now managed by AWS Managed Cache Policy (CachingOptimized): Min 1s, Default 1 day, Max 1 year
+
+---
 
 ### v1.1.0
 
