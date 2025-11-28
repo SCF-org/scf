@@ -138,8 +138,9 @@ describeE2E('E2E: CloudFront Distribution', () => {
     console.log('\n🧹 Cleaning up CloudFront and S3 resources...');
     console.log('   ⏱️  This may take 5-10 minutes\n');
 
-    try {
-      if (distributionId) {
+    // CloudFront 삭제 (독립적으로 처리)
+    if (distributionId) {
+      try {
         console.log(`   Disabling and deleting CloudFront distribution: ${distributionId}`);
         console.log('   ⏱️  This will take ~10 minutes (disable + wait + delete)...');
 
@@ -153,17 +154,21 @@ describeE2E('E2E: CloudFront Distribution', () => {
         } else {
           console.log('   ℹ  CloudFront distribution already deleted or not found');
         }
+      } catch (error) {
+        console.warn(`   ⚠️  CloudFront cleanup failed:`, error);
+        console.log(`   ⚠️  Manual cleanup may be needed for distribution: ${distributionId}`);
       }
+    }
 
-      if (testBucketName) {
+    // S3 삭제 (CloudFront 실패와 관계없이 실행)
+    if (testBucketName) {
+      try {
         console.log(`   Deleting S3 bucket: ${testBucketName}`);
         await deleteS3Bucket(s3Client, testBucketName, region);
         console.log('   ✓ S3 bucket deleted');
-      }
-    } catch (error) {
-      console.warn('   ⚠️  Cleanup error:', error);
-      if (distributionId) {
-        console.log(`   ⚠️  Manual cleanup may be needed for distribution: ${distributionId}`);
+      } catch (error) {
+        console.warn(`   ⚠️  S3 cleanup failed:`, error);
+        console.log(`   ⚠️  Manual cleanup may be needed for bucket: ${testBucketName}`);
       }
     }
 
