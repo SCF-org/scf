@@ -6,7 +6,7 @@
 
 Automate static website deployment to AWS S3 and CloudFront with a simple, powerful CLI tool.
 
-**Current Version:** 2.0.0
+**Current Version:** 2.0.1
 
 > **What's New in v2.0.0**: CloudFront Free tier pricing plan compatible! Now uses AWS Managed Cache Policy (CachingOptimized) instead of legacy cache settings. Switch your distribution to Free plan ($0/mo) in AWS Console to avoid unexpected charges.
 
@@ -1786,6 +1786,14 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 MIT License - see [LICENSE](LICENSE) file for details
 
 ## Changelog
+
+### v2.0.1
+
+- 🔧 Fixed remaining TTL references in Zod schema and config utils
+- 🔧 Updated test cases to remove TTL validation tests
+- 📝 Updated README with v2.0.0 changelog
+
+---
 
 ### v2.0.0
 
