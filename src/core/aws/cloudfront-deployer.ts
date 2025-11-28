@@ -368,7 +368,7 @@ export async function deployToCloudFront(
       const hasUpdates =
         cloudFrontConfig.priceClass ||
         cloudFrontConfig.customDomain ||
-        cloudFrontConfig.defaultTTL !== undefined;
+        cloudFrontConfig.ipv6 !== undefined;
 
       if (hasUpdates) {
         if (showProgress) {
@@ -378,9 +378,6 @@ export async function deployToCloudFront(
         const updateOptions: Partial<CreateDistributionOptions> = {
           priceClass: cloudFrontConfig.priceClass,
           customDomain: cloudFrontConfig.customDomain,
-          defaultTTL: cloudFrontConfig.defaultTTL,
-          maxTTL: cloudFrontConfig.maxTTL,
-          minTTL: cloudFrontConfig.minTTL,
           ipv6: cloudFrontConfig.ipv6,
           errorPages: effectiveErrorPages,
         };
@@ -421,9 +418,6 @@ export async function deployToCloudFront(
       indexDocument: s3Config.indexDocument,
       customDomain: cloudFrontConfig.customDomain,
       priceClass: cloudFrontConfig.priceClass,
-      defaultTTL: cloudFrontConfig.defaultTTL,
-      maxTTL: cloudFrontConfig.maxTTL,
-      minTTL: cloudFrontConfig.minTTL,
       ipv6: cloudFrontConfig.ipv6,
       errorPages: effectiveErrorPages,
     };

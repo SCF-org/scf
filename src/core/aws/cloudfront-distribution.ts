@@ -42,9 +42,6 @@ export interface CreateDistributionOptions {
     aliases?: string[];
   };
   priceClass?: "PriceClass_100" | "PriceClass_200" | "PriceClass_All";
-  defaultTTL?: number;
-  maxTTL?: number;
-  minTTL?: number;
   ipv6?: boolean;
   /** Custom error responses for SPA routing */
   errorPages?: ErrorPageConfig[];
@@ -136,12 +133,13 @@ export async function createDistribution(
     indexDocument = "index.html",
     customDomain,
     priceClass = "PriceClass_100",
-    defaultTTL = 86400, // 1 day
-    maxTTL = 31536000, // 1 year
-    minTTL = 0,
     ipv6 = true,
     errorPages,
   } = options;
+
+  // AWS Managed Cache Policy: CachingOptimized
+  // This enables CloudFront Free tier pricing plan compatibility
+  const CACHING_OPTIMIZED_POLICY_ID = "658327ea-f89d-4fab-a63d-7e88639e58f6";
 
   const originDomain = getS3OriginDomain(s3BucketName, s3Region);
   const callerReference = `scf-${Date.now()}`;
@@ -181,22 +179,9 @@ export async function createDistribution(
         },
       },
       Compress: true,
-      ForwardedValues: {
-        QueryString: false,
-        Cookies: {
-          Forward: "none",
-        },
-        Headers: {
-          Quantity: 0,
-        },
-      },
-      MinTTL: minTTL,
-      DefaultTTL: defaultTTL,
-      MaxTTL: maxTTL,
-      TrustedSigners: {
-        Enabled: false,
-        Quantity: 0,
-      },
+      // Use Cache Policy instead of Legacy ForwardedValues
+      // This enables CloudFront Free tier pricing plan compatibility
+      CachePolicyId: CACHING_OPTIMIZED_POLICY_ID,
     },
     PriceClass: priceClass,
     IsIPV6Enabled: ipv6,
@@ -277,17 +262,8 @@ export async function updateDistribution(
     throw new Error("Distribution configuration missing DefaultCacheBehavior");
   }
 
-  if (updates.defaultTTL !== undefined) {
-    currentConfig.DefaultCacheBehavior.DefaultTTL = updates.defaultTTL;
-  }
-
-  if (updates.maxTTL !== undefined) {
-    currentConfig.DefaultCacheBehavior.MaxTTL = updates.maxTTL;
-  }
-
-  if (updates.minTTL !== undefined) {
-    currentConfig.DefaultCacheBehavior.MinTTL = updates.minTTL;
-  }
+  // Note: TTL settings are now managed by Cache Policy (CachingOptimized)
+  // Legacy TTL updates (defaultTTL, maxTTL, minTTL) are no longer supported
 
   if (updates.ipv6 !== undefined) {
     currentConfig.IsIPV6Enabled = updates.ipv6;

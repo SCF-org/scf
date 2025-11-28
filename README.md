@@ -67,7 +67,8 @@ Automate static website deployment to AWS S3 and CloudFront with a simple, power
 - **SPA Mode (Default)**: Automatic 403/404 → index.html redirect for client-side routing
 - **Cache Warming**: Pre-warm edge locations to eliminate cold start latency
 - **Custom Domains**: Built-in support for custom domains with automatic SSL
-- **CDN Optimization**: Configurable price classes and TTL settings
+- **CDN Optimization**: Configurable price classes with CachingOptimized policy
+- **Free Tier Compatible**: Uses AWS Managed Cache Policy for CloudFront Free tier pricing plan eligibility
 
 ### 📦 State & Resource Management (Enhanced in v0.5.0)
 
@@ -398,6 +399,25 @@ cloudfront: {
   ],
 }
 ```
+
+### CloudFront Pricing Plans (New in Nov 2025)
+
+SCF creates CloudFront distributions using the **CachingOptimized** managed cache policy, which makes them eligible for AWS's new flat-rate pricing plans:
+
+| Plan | Price | Requests | Data Transfer |
+|------|-------|----------|---------------|
+| **Free** | $0/mo | 1M | 100GB |
+| Pro | $15/mo | 10M | 50TB |
+| Business | $200/mo | 125M | 50TB |
+
+**Key Benefits of Free Plan:**
+- ✅ No overage charges (performance throttling instead)
+- ✅ Protection from traffic spikes and DDoS attacks
+- ✅ Up to 3 Free plans per AWS account
+
+After deployment, SCF displays instructions to switch to the Free plan in the AWS Console.
+
+> **Note**: Pricing plans can only be configured in the AWS Console (not via API/SDK).
 
 ### Environment-Specific Configuration
 

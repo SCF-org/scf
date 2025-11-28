@@ -134,14 +134,12 @@ export interface CloudFrontConfig {
     aliases?: string[];
   };
 
-  /** Default TTL in seconds */
-  defaultTTL?: number;
-
-  /** Max TTL in seconds */
-  maxTTL?: number;
-
-  /** Min TTL in seconds */
-  minTTL?: number;
+  // Note: TTL settings (defaultTTL, maxTTL, minTTL) have been removed.
+  // CloudFront now uses the CachingOptimized managed cache policy which enables
+  // Free tier pricing plan compatibility and manages TTL automatically.
+  // - MinTTL: 1 second
+  // - DefaultTTL: 86400 seconds (1 day)
+  // - MaxTTL: 31536000 seconds (1 year)
 
   /** Whether to enable IPv6 */
   ipv6?: boolean;
