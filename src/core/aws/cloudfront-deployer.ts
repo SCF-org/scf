@@ -557,6 +557,25 @@ export async function deployToCloudFront(
   console.log(chalk.gray(`Domain: ${distributionDomain}`));
   console.log(chalk.green("URL:"), chalk.cyan(distributionUrl));
 
+  // Show pricing plan recommendation for new distributions
+  if (isNewDistribution) {
+    console.log();
+    console.log(chalk.yellow("━━━ CloudFront Pricing Plan Info ━━━"));
+    console.log();
+    console.log(chalk.white("This distribution was created with Pay-as-you-go pricing."));
+    console.log(chalk.white("Since Nov 2025, AWS offers new flat-rate pricing plans:"));
+    console.log();
+    console.log(chalk.cyan("  Free ($0/mo)") + chalk.gray(" - 1M requests, 100GB transfer (no overage charges, only throttling)"));
+    console.log(chalk.gray("  Pro ($15/mo)") + chalk.gray(" - 10M requests, 50TB transfer"));
+    console.log(chalk.gray("  Business ($200/mo)") + chalk.gray(" - 125M requests, 50TB transfer"));
+    console.log();
+    console.log(chalk.green("Tip:"), chalk.white("Switch to Free plan to avoid unexpected charges!"));
+    console.log(chalk.gray("     Free plan protects you from traffic spikes and DDoS attacks with no extra cost."));
+    console.log();
+    console.log(chalk.blue("How to switch:"), chalk.cyan(`https://console.aws.amazon.com/cloudfront/v4/home#/distributions/${distributionId}/pricing`));
+    console.log(chalk.gray("               Click 'Switch to plan' -> Select Free plan"));
+  }
+
   if (cloudFrontConfig.customDomain) {
     console.log(
       chalk.green("Custom Domain:"),
