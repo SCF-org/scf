@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "@jest/globals";
+import { describe, it, expect, beforeEach, afterEach, jest } from "@jest/globals";
 import { mockClient } from "aws-sdk-client-mock";
 import {
   CloudFrontClient,
@@ -512,6 +512,48 @@ describe("CloudFront Distribution Management", () => {
           priceClass: "PriceClass_All",
         })
       ).rejects.toThrow("Update failed");
+    });
+
+    it("should retry without priceClass when Free pricing plan error occurs", async () => {
+      // First call fails with Free pricing plan error
+      cfMock
+        .on(UpdateDistributionCommand)
+        .rejectsOnce(
+          new Error(
+            "Distributions with the Free pricing plan can't have the following features: Price class"
+          )
+        )
+        .resolves({
+          Distribution: mockDistribution,
+        });
+
+      // Mock the retry GetDistributionConfigCommand
+      cfMock.on(GetDistributionConfigCommand).resolves({
+        DistributionConfig: mockConfig,
+        ETag: "RETRY-ETAG",
+      });
+
+      const consoleSpy = jest.spyOn(console, "warn").mockImplementation();
+
+      const result = await updateDistribution(client, "E1234567890ABC", {
+        priceClass: "PriceClass_100",
+        ipv6: true,
+      });
+
+      expect(result).toBeDefined();
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Free pricing plan detected")
+      );
+
+      // Verify retry was called (2 UpdateDistribution calls total)
+      const updateCalls = cfMock.commandCalls(UpdateDistributionCommand);
+      expect(updateCalls.length).toBe(2);
+
+      // Second call should not change priceClass (uses original config)
+      const retryConfig = updateCalls[1].args[0].input.DistributionConfig;
+      expect(retryConfig?.IsIPV6Enabled).toBe(true);
+
+      consoleSpy.mockRestore();
     });
 
     it("should update distribution with custom error responses (SPA mode)", async () => {

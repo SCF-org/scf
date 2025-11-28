@@ -6,7 +6,7 @@
 
 Automate static website deployment to AWS S3 and CloudFront with a simple, powerful CLI tool.
 
-**Current Version:** 2.0.1
+**Current Version:** 2.0.2
 
 > **What's New in v2.0.0**: CloudFront Free tier pricing plan compatible! Now uses AWS Managed Cache Policy (CachingOptimized) instead of legacy cache settings. Switch your distribution to Free plan ($0/mo) in AWS Console to avoid unexpected charges.
 
@@ -1786,6 +1786,14 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 MIT License - see [LICENSE](LICENSE) file for details
 
 ## Changelog
+
+### v2.0.2
+
+- 🔧 **Free Plan Compatibility**: Fixed error when updating distributions on Free pricing plan
+- 🔧 `priceClass` update is now automatically skipped for Free plan distributions
+- ℹ️ Free plan uses all edge locations (equivalent to PriceClass_All)
+
+---
 
 ### v2.0.1
 

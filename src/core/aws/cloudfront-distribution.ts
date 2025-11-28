@@ -301,13 +301,94 @@ export async function updateDistribution(
     IfMatch: etag,
   };
 
-  const response = await client.send(new UpdateDistributionCommand(command));
+  try {
+    const response = await client.send(new UpdateDistributionCommand(command));
 
-  if (!response.Distribution) {
-    throw new Error("Failed to update distribution: No distribution returned");
+    if (!response.Distribution) {
+      throw new Error("Failed to update distribution: No distribution returned");
+    }
+
+    return response.Distribution;
+  } catch (error) {
+    // Handle Free pricing plan restriction
+    if (
+      error instanceof Error &&
+      error.message.includes("Free pricing plan") &&
+      error.message.includes("Price class")
+    ) {
+      console.warn(
+        "\n⚠️  Free pricing plan detected - skipping priceClass update"
+      );
+      console.warn(
+        "   Free plan distributions use all edge locations (equivalent to PriceClass_All)\n"
+      );
+
+      // Retry without priceClass change - restore original priceClass
+      const retryConfigResponse = await client.send(
+        new GetDistributionConfigCommand({ Id: distributionId })
+      );
+
+      if (!retryConfigResponse.DistributionConfig || !retryConfigResponse.ETag) {
+        throw new Error("Failed to get distribution configuration for retry");
+      }
+
+      const retryConfig = retryConfigResponse.DistributionConfig;
+      const retryEtag = retryConfigResponse.ETag;
+
+      // Apply updates except priceClass
+      if (!retryConfig.DefaultCacheBehavior) {
+        throw new Error("Distribution configuration missing DefaultCacheBehavior");
+      }
+
+      if (updates.ipv6 !== undefined) {
+        retryConfig.IsIPV6Enabled = updates.ipv6;
+      }
+
+      if (updates.customDomain && updates.customDomain.certificateArn) {
+        retryConfig.Aliases = {
+          Quantity: updates.customDomain.aliases?.length || 1,
+          Items: updates.customDomain.aliases || [updates.customDomain.domainName],
+        };
+
+        retryConfig.ViewerCertificate = {
+          ACMCertificateArn: updates.customDomain.certificateArn,
+          SSLSupportMethod: "sni-only",
+          MinimumProtocolVersion: "TLSv1.2_2021",
+        };
+      }
+
+      if (updates.errorPages && updates.errorPages.length > 0) {
+        retryConfig.CustomErrorResponses = {
+          Quantity: updates.errorPages.length,
+          Items: updates.errorPages.map((errorPage) => ({
+            ErrorCode: errorPage.errorCode,
+            ResponsePagePath: errorPage.responsePath,
+            ResponseCode: errorPage.responseCode?.toString(),
+            ErrorCachingMinTTL: errorPage.cacheTTL,
+          })),
+        };
+      }
+
+      const retryCommand: UpdateDistributionCommandInput = {
+        Id: distributionId,
+        DistributionConfig: retryConfig,
+        IfMatch: retryEtag,
+      };
+
+      const retryResponse = await client.send(
+        new UpdateDistributionCommand(retryCommand)
+      );
+
+      if (!retryResponse.Distribution) {
+        throw new Error("Failed to update distribution: No distribution returned");
+      }
+
+      return retryResponse.Distribution;
+    }
+
+    // Re-throw other errors
+    throw error;
   }
-
-  return response.Distribution;
 }
 
 /**
