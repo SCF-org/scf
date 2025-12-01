@@ -8,7 +8,16 @@ import inquirer from "inquirer";
 import * as logger from "../utils/logger.js";
 import { loadConfig } from "../../core/config/index.js";
 import { getCredentials } from "../../core/aws/index.js";
-import { loadState, stateExists, deleteState } from "../../core/state/index.js";
+import {
+  loadState,
+  stateExists,
+  deleteState,
+  saveState,
+  removeCloudFrontResource,
+  removeS3Resource,
+  removeACMResource,
+  removeRoute53Resource,
+} from "../../core/state/index.js";
 import { discoverAllResources } from "../../core/aws/resource-discovery.js";
 import { deleteS3Bucket } from "../../core/aws/s3-bucket.js";
 import { deleteCloudFrontDistribution } from "../../core/aws/cloudfront-distribution.js";
@@ -234,12 +243,20 @@ async function removeCommand(options: RemoveOptions): Promise<void> {
   // (CloudFront must be deleted before ACM certificate can be removed)
 
   const deletionErrors: string[] = [];
+  const deletedResources: string[] = [];
 
   // 6.1: Delete CloudFront Distribution
   if (hasCloudFront && cfDistributionId) {
     try {
       const cfClient = createCloudFrontClient(config);
       await deleteCloudFrontDistribution(cfClient, cfDistributionId);
+      deletedResources.push("CloudFront");
+
+      // Update state immediately after successful deletion
+      if (state) {
+        state = removeCloudFrontResource(state);
+        saveState(state, { environment: env });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       deletionErrors.push(`CloudFront: ${message}`);
@@ -253,6 +270,13 @@ async function removeCommand(options: RemoveOptions): Promise<void> {
     try {
       const acmManager = new ACMManager({ credentials });
       await acmManager.deleteCertificate(acmCertificateArn);
+      deletedResources.push("ACM Certificate");
+
+      // Update state immediately after successful deletion
+      if (state) {
+        state = removeACMResource(state);
+        saveState(state, { environment: env });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       deletionErrors.push(`ACM: ${message}`);
@@ -266,6 +290,13 @@ async function removeCommand(options: RemoveOptions): Promise<void> {
     try {
       const s3Client = createS3Client(config);
       await deleteS3Bucket(s3Client, s3BucketName, s3Region);
+      deletedResources.push("S3 Bucket");
+
+      // Update state immediately after successful deletion
+      if (state) {
+        state = removeS3Resource(state);
+        saveState(state, { environment: env });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       deletionErrors.push(`S3: ${message}`);
@@ -282,6 +313,13 @@ async function removeCommand(options: RemoveOptions): Promise<void> {
         credentials,
       });
       await route53Manager.deleteHostedZone(route53ZoneId);
+      deletedResources.push("Route53 Hosted Zone");
+
+      // Update state immediately after successful deletion
+      if (state) {
+        state = removeRoute53Resource(state);
+        saveState(state, { environment: env });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       deletionErrors.push(`Route53: ${message}`);
@@ -290,24 +328,50 @@ async function removeCommand(options: RemoveOptions): Promise<void> {
     }
   }
 
-  // Step 7: Delete state file if all deletions succeeded
+  // Step 7: Delete state file if all deletions succeeded and no resources remain
   if (deletionErrors.length === 0 && hasState) {
     deleteState({ environment: env });
     console.log();
     logger.success("State file deleted");
+  } else if (deletionErrors.length > 0 && hasState && state) {
+    // Check if any resources still remain in state
+    const hasRemainingResources =
+      state.resources.cloudfront ||
+      state.resources.s3 ||
+      state.resources.acm ||
+      state.resources.route53;
+
+    if (!hasRemainingResources) {
+      deleteState({ environment: env });
+      console.log();
+      logger.success("State file deleted (all tracked resources removed)");
+    }
   }
 
   // Step 8: Summary
   console.log();
-  if (deletionErrors.length > 0) {
-    console.log(chalk.yellow("⚠️  Some resources could not be deleted:"));
+  console.log(chalk.bold("📋 Summary:"));
+  console.log();
+
+  if (deletedResources.length > 0) {
+    console.log(chalk.green("Successfully deleted:"));
+    for (const resource of deletedResources) {
+      console.log(`  ${chalk.green("✓")} ${resource}`);
+    }
     console.log();
+  }
+
+  if (deletionErrors.length > 0) {
+    console.log(chalk.red("Failed to delete:"));
     for (const error of deletionErrors) {
       console.log(`  ${chalk.red("✗")} ${error}`);
     }
     console.log();
     logger.warn(
-      "Some resources may still exist. Please check AWS console and retry if needed."
+      "State file has been updated to reflect remaining resources."
+    );
+    logger.warn(
+      "Please check AWS console and retry: scf remove"
     );
   } else {
     logger.success("All resources removed successfully!");

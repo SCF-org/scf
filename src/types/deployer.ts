@@ -75,6 +75,9 @@ export interface DeploymentStats {
 
   /** Upload results */
   results: UploadResult[];
+
+  /** Whether S3 bucket was created in this deployment */
+  bucketCreated: boolean;
 }
 
 /**
@@ -104,6 +107,9 @@ export interface UploadOptions {
 
   /** Whether to save state after deployment (default: true) */
   saveState?: boolean;
+
+  /** Whether to cleanup deleted files from S3 (default: true) */
+  cleanupDeletedFiles?: boolean;
 }
 
 /**

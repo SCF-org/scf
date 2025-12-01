@@ -99,7 +99,8 @@ describe('S3 Bucket Management', () => {
         name: 'BucketAlreadyOwnedByYou',
       });
 
-      await expect(createBucket(client, 'my-bucket', 'us-east-1')).resolves.toBeUndefined();
+      const result = await createBucket(client, 'my-bucket', 'us-east-1');
+      expect(result).toEqual({ actuallyCreated: false });
     });
 
     it('should throw other errors', async () => {

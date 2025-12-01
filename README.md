@@ -6,7 +6,7 @@
 
 Automate static website deployment to AWS S3 and CloudFront with a simple, powerful CLI tool.
 
-**Current Version:** 2.0.2
+**Current Version:** 2.1.0
 
 > **What's New in v2.0.0**: CloudFront Free tier pricing plan compatible! Now uses AWS Managed Cache Policy (CachingOptimized) instead of legacy cache settings. Switch your distribution to Free plan ($0/mo) in AWS Console to avoid unexpected charges.
 
@@ -629,6 +629,8 @@ scf-deploy deploy --force
 - `--force` - Force full deployment (ignore state)
 - `--skip-cache` - Skip CloudFront cache invalidation
 - `--skip-build` - Skip automatic build
+- `--no-rollback` - Keep S3 bucket if CloudFront deployment fails (NEW in v2.1.0)
+- `--no-cleanup` - Skip deletion of removed files from S3 (NEW in v2.1.0)
 
 ### remove
 
@@ -1786,6 +1788,29 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 MIT License - see [LICENSE](LICENSE) file for details
 
 ## Changelog
+
+### v2.1.0
+
+**🛡️ Deployment Stability & Resource Management**
+
+- ✨ **S3 File Cleanup**: Automatically delete files from S3 that were removed locally during incremental deploy
+- ✨ **CloudFront Rollback**: Auto-rollback newly created S3 bucket when CloudFront deployment fails
+- ✨ **Partial Resource Cleanup**: ACM/Route53 cleanup on CloudFront deployment failure
+- ✨ **AWS API Retry**: Exponential backoff retry logic for transient AWS errors
+- ✨ **Extended Timeout**: CloudFront deployment timeout increased (20min → 30min)
+- ✨ **Immediate State Updates**: State file updated after each resource deletion (remove command)
+
+**New CLI Options:**
+
+- `--no-rollback` - Keep S3 bucket even if CloudFront deployment fails
+- `--no-cleanup` - Skip S3 file cleanup during incremental deploy
+
+**Bug Fixes:**
+
+- 🔧 Fixed race condition in S3 bucket rollback logic
+- 🔧 Fixed duplicate hash comparison during incremental deploy
+
+---
 
 ### v2.0.2
 

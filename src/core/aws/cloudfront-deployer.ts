@@ -33,6 +33,47 @@ import { Route53Manager } from "./route53-manager.js";
 import { createCredentialProvider } from "./credentials.js";
 
 /**
+ * Cleanup partially created resources when SSL certificate creation fails
+ */
+async function cleanupPartialResources(
+  route53Manager: Route53Manager | null,
+  acmManager: ACMManager | null,
+  hostedZoneId: string | null,
+  hostedZoneCreated: boolean,
+  certificateArn: string | null,
+  certificateRequestedNew: boolean
+): Promise<void> {
+  const cleanupErrors: string[] = [];
+
+  // Cleanup ACM certificate if we created it
+  if (certificateRequestedNew && certificateArn && acmManager) {
+    try {
+      console.log(chalk.gray("   Cleaning up ACM certificate..."));
+      await acmManager.deleteCertificate(certificateArn);
+      console.log(chalk.green("   ✓ Cleanup: ACM certificate deleted"));
+    } catch (e) {
+      cleanupErrors.push(`ACM: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  // Cleanup Route53 hosted zone if we created it
+  if (hostedZoneCreated && hostedZoneId && route53Manager) {
+    try {
+      console.log(chalk.gray("   Cleaning up Route53 hosted zone..."));
+      await route53Manager.deleteHostedZone(hostedZoneId);
+      console.log(chalk.green("   ✓ Cleanup: Route53 hosted zone deleted"));
+    } catch (e) {
+      cleanupErrors.push(`Route53: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  if (cleanupErrors.length > 0) {
+    console.log(chalk.yellow("\n   Cleanup warnings (some resources may remain):"));
+    cleanupErrors.forEach((err) => console.log(chalk.gray(`   - ${err}`)));
+  }
+}
+
+/**
  * CloudFront deployment options
  */
 export interface CloudFrontDeploymentOptions {
@@ -139,11 +180,15 @@ export async function deployToCloudFront(
     console.log();
 
     // Track hosted zone for better error messaging and for alias creation later
+    // Also track ACM manager and certificate ARN for cleanup on error
+    let acmManagerRef: ACMManager | null = null;
+    let certificateArnForCleanup: string | null = null;
 
     try {
       // Initialize managers with proper credentials
       const credentials = createCredentialProvider(config);
       const acmManager = new ACMManager({ credentials });
+      acmManagerRef = acmManager;
       const route53Manager = new Route53Manager({
         region: config.region,
         credentials,
@@ -194,6 +239,7 @@ export async function deployToCloudFront(
           config.app,
           environment || 'default'
         );
+        certificateArnForCleanup = certificateArn; // Track for cleanup on error
         console.log(
           chalk.green("✓"),
           `Certificate requested: ${chalk.cyan(
@@ -280,6 +326,20 @@ export async function deployToCloudFront(
         console.error(chalk.red(error.message));
       }
 
+      // Attempt to cleanup partially created resources
+      if (hostedZoneCreated || certificateRequestedNew) {
+        console.log();
+        console.log(chalk.gray("   Attempting to cleanup partially created resources..."));
+        await cleanupPartialResources(
+          route53ManagerRef,
+          acmManagerRef,
+          cleanZoneIdForError,
+          hostedZoneCreated,
+          certificateArnForCleanup,
+          certificateRequestedNew
+        );
+      }
+
       console.log();
       console.log(chalk.yellow("Next steps:"));
       console.log(
@@ -287,7 +347,8 @@ export async function deployToCloudFront(
           "  - ACM is handled automatically. You only need to delegate your domain's name servers (NS) to Route53."
         )
       );
-      if (cleanZoneIdForError) {
+      if (cleanZoneIdForError && !hostedZoneCreated) {
+        // Only show NS info if hosted zone wasn't cleaned up
         try {
           const credentials = createCredentialProvider(config);
           const route53Manager = new Route53Manager({

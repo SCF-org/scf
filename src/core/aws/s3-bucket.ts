@@ -16,6 +16,7 @@ import {
   DeleteBucketCommand,
   type BucketLocationConstraint,
 } from '@aws-sdk/client-s3';
+import { withRetry, AWS_RETRYABLE_ERRORS } from '../utils/retry.js';
 
 /**
  * Check if bucket exists
@@ -51,7 +52,7 @@ export async function createBucket(
   client: S3Client,
   bucketName: string,
   region: string
-): Promise<void> {
+): Promise<{ actuallyCreated: boolean }> {
   try {
     const command = new CreateBucketCommand({
       Bucket: bucketName,
@@ -64,6 +65,7 @@ export async function createBucket(
     });
 
     await client.send(command);
+    return { actuallyCreated: true };
   } catch (error: unknown) {
     if (
       error &&
@@ -71,8 +73,8 @@ export async function createBucket(
       'name' in error &&
       error.name === 'BucketAlreadyOwnedByYou'
     ) {
-      // Bucket already exists and owned by us, continue
-      return;
+      // Bucket already exists and owned by us - NOT created by this call
+      return { actuallyCreated: false };
     }
     throw error;
   }
@@ -157,7 +159,7 @@ export async function ensureBucket(
     errorDocument?: string;
     publicRead?: boolean;
   } = {}
-): Promise<void> {
+): Promise<{ created: boolean }> {
   const {
     websiteHosting = true,
     indexDocument = 'index.html',
@@ -167,10 +169,12 @@ export async function ensureBucket(
 
   // Check if bucket exists
   const exists = await bucketExists(client, bucketName);
+  let created = false;
 
   if (!exists) {
-    // Create bucket
-    await createBucket(client, bucketName, region);
+    // Create bucket - actuallyCreated is false if BucketAlreadyOwnedByYou
+    const result = await createBucket(client, bucketName, region);
+    created = result.actuallyCreated;
   }
 
   // Configure website hosting
@@ -182,6 +186,8 @@ export async function ensureBucket(
   if (publicRead) {
     await setBucketPublicReadPolicy(client, bucketName);
   }
+
+  return { created };
 }
 
 /**
@@ -252,6 +258,56 @@ export function getBucketWebsiteUrl(bucketName: string, region: string): string 
 }
 
 /**
+ * Delete specific files from S3 bucket
+ */
+export async function deleteFilesFromS3(
+  client: S3Client,
+  bucketName: string,
+  keys: string[]
+): Promise<{ deleted: number; failed: number }> {
+  if (keys.length === 0) {
+    return { deleted: 0, failed: 0 };
+  }
+
+  const BATCH_SIZE = 1000; // S3 DeleteObjects limit
+  let deleted = 0;
+  let failed = 0;
+
+  for (let i = 0; i < keys.length; i += BATCH_SIZE) {
+    const batch = keys.slice(i, i + BATCH_SIZE);
+
+    try {
+      const result = await withRetry(
+        () =>
+          client.send(
+            new DeleteObjectsCommand({
+              Bucket: bucketName,
+              Delete: {
+                Objects: batch.map((key) => ({ Key: key })),
+                Quiet: true,
+              },
+            })
+          ),
+        {
+          maxRetries: 3,
+          initialDelayMs: 1000,
+          maxDelayMs: 10000,
+          backoffMultiplier: 2,
+          retryableErrors: AWS_RETRYABLE_ERRORS.S3,
+        }
+      );
+
+      deleted += batch.length - (result.Errors?.length || 0);
+      failed += result.Errors?.length || 0;
+    } catch {
+      failed += batch.length;
+    }
+  }
+
+  return { deleted, failed };
+}
+
+/**
  * Delete S3 bucket and all its contents
  */
 export async function deleteS3Bucket(
@@ -269,23 +325,51 @@ export async function deleteS3Bucket(
 
     let continuationToken: string | undefined;
     do {
-      const listResult = await client.send(
-        new ListObjectsV2Command({
-          Bucket: bucketName,
-          ContinuationToken: continuationToken,
-        })
+      // Add retry for list operation
+      const listResult = await withRetry(
+        () =>
+          client.send(
+            new ListObjectsV2Command({
+              Bucket: bucketName,
+              ContinuationToken: continuationToken,
+            })
+          ),
+        {
+          maxRetries: 3,
+          initialDelayMs: 1000,
+          maxDelayMs: 10000,
+          backoffMultiplier: 2,
+          retryableErrors: AWS_RETRYABLE_ERRORS.S3,
+        },
+        (attempt) => {
+          spinner.text = `Listing objects (retry ${attempt}/3)...`;
+        }
       );
 
       if (listResult.Contents && listResult.Contents.length > 0) {
         spinner.text = `Deleting ${listResult.Contents.length} objects...`;
 
-        await client.send(
-          new DeleteObjectsCommand({
-            Bucket: bucketName,
-            Delete: {
-              Objects: listResult.Contents.map((obj) => ({ Key: obj.Key })),
-            },
-          })
+        // Add retry for delete operation
+        await withRetry(
+          () =>
+            client.send(
+              new DeleteObjectsCommand({
+                Bucket: bucketName,
+                Delete: {
+                  Objects: (listResult.Contents ?? []).map((obj) => ({ Key: obj.Key })),
+                },
+              })
+            ),
+          {
+            maxRetries: 3,
+            initialDelayMs: 1000,
+            maxDelayMs: 10000,
+            backoffMultiplier: 2,
+            retryableErrors: AWS_RETRYABLE_ERRORS.S3,
+          },
+          (attempt) => {
+            spinner.text = `Deleting objects (retry ${attempt}/3)...`;
+          }
         );
 
         objectsDeleted += listResult.Contents.length;
@@ -297,10 +381,20 @@ export async function deleteS3Bucket(
 
     // Delete the bucket itself
     spinner.text = 'Deleting bucket...';
-    await client.send(
-      new DeleteBucketCommand({
-        Bucket: bucketName,
-      })
+    await withRetry(
+      () =>
+        client.send(
+          new DeleteBucketCommand({
+            Bucket: bucketName,
+          })
+        ),
+      {
+        maxRetries: 3,
+        initialDelayMs: 1000,
+        maxDelayMs: 10000,
+        backoffMultiplier: 2,
+        retryableErrors: AWS_RETRYABLE_ERRORS.S3,
+      }
     );
 
     spinner.succeed(`S3 bucket deleted (${objectsDeleted} objects removed)`);

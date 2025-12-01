@@ -4,20 +4,20 @@
 
 import {
   CloudFrontClient,
-  GetDistributionCommand,
   CreateDistributionCommand,
-  UpdateDistributionCommand,
   DeleteDistributionCommand,
+  GetDistributionCommand,
   GetDistributionConfigCommand,
-  waitUntilDistributionDeployed,
-  TagResourceCommand,
   ListTagsForResourceCommand,
+  TagResourceCommand,
+  UpdateDistributionCommand,
+  waitUntilDistributionDeployed,
+  type CreateDistributionCommandInput,
   type Distribution,
   type DistributionConfig,
-  type CreateDistributionCommandInput,
   type UpdateDistributionCommandInput,
 } from "@aws-sdk/client-cloudfront";
-import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
+import { GetCallerIdentityCommand, STSClient } from "@aws-sdk/client-sts";
 
 /**
  * Error page configuration for CloudFront Custom Error Responses
@@ -305,7 +305,9 @@ export async function updateDistribution(
     const response = await client.send(new UpdateDistributionCommand(command));
 
     if (!response.Distribution) {
-      throw new Error("Failed to update distribution: No distribution returned");
+      throw new Error(
+        "Failed to update distribution: No distribution returned"
+      );
     }
 
     return response.Distribution;
@@ -328,7 +330,10 @@ export async function updateDistribution(
         new GetDistributionConfigCommand({ Id: distributionId })
       );
 
-      if (!retryConfigResponse.DistributionConfig || !retryConfigResponse.ETag) {
+      if (
+        !retryConfigResponse.DistributionConfig ||
+        !retryConfigResponse.ETag
+      ) {
         throw new Error("Failed to get distribution configuration for retry");
       }
 
@@ -337,7 +342,9 @@ export async function updateDistribution(
 
       // Apply updates except priceClass
       if (!retryConfig.DefaultCacheBehavior) {
-        throw new Error("Distribution configuration missing DefaultCacheBehavior");
+        throw new Error(
+          "Distribution configuration missing DefaultCacheBehavior"
+        );
       }
 
       if (updates.ipv6 !== undefined) {
@@ -347,7 +354,9 @@ export async function updateDistribution(
       if (updates.customDomain && updates.customDomain.certificateArn) {
         retryConfig.Aliases = {
           Quantity: updates.customDomain.aliases?.length || 1,
-          Items: updates.customDomain.aliases || [updates.customDomain.domainName],
+          Items: updates.customDomain.aliases || [
+            updates.customDomain.domainName,
+          ],
         };
 
         retryConfig.ViewerCertificate = {
@@ -380,7 +389,9 @@ export async function updateDistribution(
       );
 
       if (!retryResponse.Distribution) {
-        throw new Error("Failed to update distribution: No distribution returned");
+        throw new Error(
+          "Failed to update distribution: No distribution returned"
+        );
       }
 
       return retryResponse.Distribution;
@@ -532,6 +543,7 @@ export async function deleteCloudFrontDistribution(
   distributionId: string
 ): Promise<void> {
   const ora = (await import("ora")).default;
+  const chalk = (await import("chalk")).default;
   const spinner = ora("Deleting CloudFront distribution...").start();
 
   try {
@@ -546,11 +558,36 @@ export async function deleteCloudFrontDistribution(
     // Wait if distribution is deploying
     if (getDistResult.Distribution?.Status === "InProgress") {
       spinner.text = "Waiting for distribution deployment to complete...";
-      await waitForDistributionDeployed(client, distributionId, {
-        maxWaitTime: 1200,
-        minDelay: 20,
-        maxDelay: 60,
-      });
+      try {
+        await waitForDistributionDeployed(client, distributionId, {
+          maxWaitTime: 1800, // Extended to 30 minutes
+          minDelay: 20,
+          maxDelay: 60,
+        });
+      } catch (_waitError) {
+        // Check current status before giving up
+        const currentDist = await getDistribution(client, distributionId);
+        if (currentDist?.Status === "InProgress") {
+          spinner.warn(
+            "Distribution deployment is taking longer than expected"
+          );
+          console.log();
+          console.log(chalk.yellow("The distribution is still deploying."));
+          console.log(chalk.gray("Options:"));
+          console.log(chalk.gray(`  1. Wait and retry: scf remove`));
+          console.log(
+            chalk.gray(
+              `  2. Check status: aws cloudfront get-distribution --id ${distributionId}`
+            )
+          );
+          console.log(chalk.gray("  3. Delete via AWS Console"));
+          console.log();
+          throw new Error(
+            `Distribution ${distributionId} deployment timed out. Please retry later.`
+          );
+        }
+        // Status changed to Deployed, continue
+      }
     }
 
     // Get distribution config
@@ -575,11 +612,36 @@ export async function deleteCloudFrontDistribution(
         );
 
         spinner.text = "Waiting for distribution to be disabled...";
-        await waitForDistributionDeployed(client, distributionId, {
-          maxWaitTime: 1200,
-          minDelay: 20,
-          maxDelay: 60,
-        });
+        try {
+          await waitForDistributionDeployed(client, distributionId, {
+            maxWaitTime: 1800, // Extended to 30 minutes
+            minDelay: 20,
+            maxDelay: 60,
+          });
+        } catch (_waitError) {
+          // Check current status before giving up
+          const currentDist = await getDistribution(client, distributionId);
+          if (currentDist?.Status === "InProgress") {
+            spinner.warn("Distribution disable is taking longer than expected");
+            console.log();
+            console.log(
+              chalk.yellow("The distribution is still being disabled.")
+            );
+            console.log(chalk.gray("Options:"));
+            console.log(chalk.gray(`  1. Wait and retry: scf remove`));
+            console.log(
+              chalk.gray(
+                `  2. Check status: aws cloudfront get-distribution --id ${distributionId}`
+              )
+            );
+            console.log(chalk.gray("  3. Delete via AWS Console"));
+            console.log();
+            throw new Error(
+              `Distribution ${distributionId} disable timed out. Please retry later.`
+            );
+          }
+          // Status changed to Deployed (disabled), continue with deletion
+        }
       }
 
       // Get updated ETag

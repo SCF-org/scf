@@ -9,7 +9,7 @@ import cliProgress from "cli-progress";
 import type { SCFConfig } from "../../types/config.js";
 import type { DeploymentStats, UploadOptions } from "../../types/deployer.js";
 import { createS3Client } from "./client.js";
-import { ensureBucket, getBucketWebsiteUrl, tagBucketForRecovery } from "./s3-bucket.js";
+import { ensureBucket, getBucketWebsiteUrl, tagBucketForRecovery, deleteFilesFromS3 } from "./s3-bucket.js";
 import { scanFiles } from "../deployer/file-scanner.js";
 import { getBuildDirectory } from "../deployer/build-detector.js";
 import {
@@ -60,6 +60,7 @@ export async function deployToS3(
     useIncrementalDeploy = true,
     forceFullDeploy = false,
     saveState: shouldSaveState = true,
+    cleanupDeletedFiles = true,
   } = options;
 
   // Step 1: Detect and validate build directory
@@ -113,19 +114,22 @@ export async function deployToS3(
     spinner = ora("Checking S3 bucket...").start();
   }
 
+  let bucketCreated = false;
+
   try {
-    await ensureBucket(s3Client, bucketName, config.region, {
+    const bucketResult = await ensureBucket(s3Client, bucketName, config.region, {
       websiteHosting,
       indexDocument,
       errorDocument,
       publicRead: true,
     });
+    bucketCreated = bucketResult.created;
 
     // Tag bucket for state recovery
     await tagBucketForRecovery(s3Client, bucketName, config.app, environment);
 
     if (spinner) {
-      spinner.succeed(`S3 bucket ready: ${chalk.cyan(bucketName)}`);
+      spinner.succeed(`S3 bucket ready: ${chalk.cyan(bucketName)}${bucketCreated ? ' (created)' : ''}`);
     }
   } catch (error) {
     if (spinner) {
@@ -137,13 +141,14 @@ export async function deployToS3(
   // Step 4: Load state and determine files to upload (incremental deployment)
   let state = loadState({ environment });
   let filesToUpload = files;
+  let fileChanges: ReturnType<typeof compareFileHashes> | null = null;
 
   if (useIncrementalDeploy && !forceFullDeploy && state) {
     if (showProgress) {
       spinner = ora("Analyzing file changes...").start();
     }
 
-    const changes = compareFileHashes(files, state.files);
+    fileChanges = compareFileHashes(files, state.files);
 
     if (spinner) {
       spinner.succeed("File changes analyzed");
@@ -151,10 +156,10 @@ export async function deployToS3(
 
     // Show changes
     console.log();
-    console.log(formatFileChanges(changes));
+    console.log(formatFileChanges(fileChanges));
     console.log();
 
-    if (changes.totalChanges === 0) {
+    if (fileChanges.totalChanges === 0) {
       console.log(
         chalk.green("✨ No changes detected. Deployment not needed.")
       );
@@ -171,6 +176,7 @@ export async function deployToS3(
           success: true,
           status: "skipped" as const,
         })),
+        bucketCreated,
       };
     }
 
@@ -287,7 +293,42 @@ export async function deployToS3(
     console.log(chalk.green("🌐 Website URL:"), chalk.cyan(websiteUrl));
   }
 
-  // Step 6: Save state
+  // Step 6: Cleanup deleted files from S3
+  if (cleanupDeletedFiles && useIncrementalDeploy && !forceFullDeploy && state && !dryRun && fileChanges) {
+    if (fileChanges.deleted.length > 0) {
+      if (showProgress) {
+        spinner = ora(`Cleaning up ${fileChanges.deleted.length} deleted files from S3...`).start();
+      }
+
+      try {
+        const deletedKeys = fileChanges.deleted.map((f) => f.path);
+        const deleteResults = await deleteFilesFromS3(s3Client, bucketName, deletedKeys);
+
+        if (spinner) {
+          spinner.succeed(
+            `Cleaned up ${deleteResults.deleted} files from S3${
+              deleteResults.failed > 0
+                ? chalk.yellow(` (${deleteResults.failed} failed)`)
+                : ""
+            }`
+          );
+        }
+
+        if (deleteResults.failed > 0 && showProgress) {
+          console.log(
+            chalk.yellow(`  ⚠ ${deleteResults.failed} files could not be deleted`)
+          );
+        }
+      } catch (_error) {
+        if (spinner) {
+          spinner.warn("Failed to cleanup some deleted files from S3");
+        }
+        // Non-critical error, continue with deployment
+      }
+    }
+  }
+
+  // Step 7: Save state
   if (shouldSaveState && !dryRun && uploaded > 0) {
     // Get or create state
     if (!state) {
@@ -332,5 +373,6 @@ export async function deployToS3(
     compressedSize,
     duration,
     results: uploadResults,
+    bucketCreated,
   };
 }
