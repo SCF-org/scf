@@ -1,6 +1,6 @@
 {
   "name": "scf-deploy",
-  "version": "2.1.0",
+  "version": "3.0.0",
   "description": "S3 + CloudFront static deployment automation CLI with automatic SSL certificate creation",
   "type": "module",
   "author": "jeonghodong <fire13764@gmail.com>",

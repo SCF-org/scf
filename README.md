@@ -6,9 +6,9 @@
 
 Automate static website deployment to AWS S3 and CloudFront with a simple, powerful CLI tool.
 
-**Current Version:** 2.1.0
+**Current Version:** 3.0.0
 
-> **What's New in v2.0.0**: CloudFront Free tier pricing plan compatible! Now uses AWS Managed Cache Policy (CachingOptimized) instead of legacy cache settings. Switch your distribution to Free plan ($0/mo) in AWS Console to avoid unexpected charges.
+> **What's New in v3.0.0**: Enhanced security with Origin Access Control (OAC)! S3 buckets are now private and only accessible through CloudFront. CloudFront is always enabled for security - no more `enabled` option needed.
 
 ## Table of Contents
 
@@ -135,7 +135,7 @@ const config: SCFConfig = {
   },
 
   cloudfront: {
-    enabled: true,
+    // CloudFront is always enabled for security (OAC restricts S3 access)
     // priceClass: 'PriceClass_100', // Optional, defaults to PriceClass_100
   },
 };
@@ -190,7 +190,7 @@ const config: SCFConfig = {
   },
 
   cloudfront: {
-    enabled: true,
+    // CloudFront is always enabled (OAC secures S3 access)
     // priceClass: 'PriceClass_100',  // Optional: PriceClass_100, PriceClass_200, PriceClass_All
   },
 };
@@ -226,12 +226,10 @@ Environment variables are loaded automatically before config file execution:
 # .env.dev
 AWS_REGION=us-east-1
 S3_BUCKET_NAME=my-app-bucket-dev
-CLOUDFRONT_ENABLED=false
 
 # .env.prod
 AWS_REGION=us-east-1
 S3_BUCKET_NAME=my-app-bucket-prod
-CLOUDFRONT_ENABLED=true
 CLOUDFRONT_DOMAIN=www.example.com
 ACM_CERTIFICATE_ARN=arn:aws:acm:us-east-1:123456789012:certificate/xxx
 ```
@@ -251,7 +249,7 @@ const config: SCFConfig = {
   },
 
   cloudfront: {
-    enabled: process.env.CLOUDFRONT_ENABLED === "true",
+    // CloudFront is always enabled for security
     customDomain: process.env.CLOUDFRONT_DOMAIN
       ? {
           domainName: process.env.CLOUDFRONT_DOMAIN,
@@ -358,7 +356,6 @@ const config: SCFConfig = {
   },
 
   cloudfront: {
-    enabled: true,
     // SPA mode is true by default - no configuration needed!
     // spa: true,  // Redirect 403/404 to index.html (default)
   },
@@ -380,7 +377,6 @@ If you have a traditional static site that needs to show actual 404 error pages:
 
 ```typescript
 cloudfront: {
-  enabled: true,
   spa: false,  // Disable SPA mode - return default 404 errors
 }
 ```
@@ -391,7 +387,6 @@ For fine-grained control, use `errorPages` configuration:
 
 ```typescript
 cloudfront: {
-  enabled: true,
   spa: false,  // Disable default SPA behavior
   errorPages: [
     { errorCode: 404, responsePath: '/404.html', responseCode: 404, cacheTTL: 300 },
@@ -433,14 +428,13 @@ const config: SCFConfig = {
   },
 
   cloudfront: {
-    enabled: true,
+    // CloudFront is always enabled for security
   },
 
   // Environment overrides
   environments: {
     dev: {
       s3: { bucketName: "my-site-dev" },
-      cloudfront: { enabled: false }, // Skip CloudFront in dev
     },
     staging: {
       s3: { bucketName: "my-site-staging" },
@@ -474,7 +468,6 @@ const config: SCFConfig = {
   },
 
   cloudfront: {
-    enabled: true,
     customDomain: {
       domainName: "example.com", // That's it! SSL certificate is created automatically
     },
@@ -534,7 +527,6 @@ const config: SCFConfig = {
   },
 
   cloudfront: {
-    enabled: true,
     customDomain: {
       domainName: "example.com",
       certificateArn: "arn:aws:acm:us-east-1:123456789012:certificate/abc-def", // Use existing certificate
@@ -612,9 +604,6 @@ scf-deploy deploy --profile my-aws-profile
 # Preview without uploading
 scf-deploy deploy --dry-run
 
-# Skip CloudFront (S3 only)
-scf-deploy deploy --no-cloudfront
-
 # Force full deployment (ignore cached state)
 scf-deploy deploy --force
 ```
@@ -625,7 +614,6 @@ scf-deploy deploy --force
 - `-c, --config <path>` - Config file path (default: "scf.config.ts")
 - `-p, --profile <profile>` - AWS profile name
 - `--dry-run` - Preview deployment without uploading
-- `--no-cloudfront` - Skip CloudFront deployment
 - `--force` - Force full deployment (ignore state)
 - `--skip-cache` - Skip CloudFront cache invalidation
 - `--skip-build` - Skip automatic build
@@ -1105,7 +1093,7 @@ const config: SCFConfig = {
     indexDocument: "index.html",
   },
   cloudfront: {
-    enabled: true,
+    // CloudFront always enabled for security
   },
 };
 
@@ -1136,7 +1124,6 @@ const config: SCFConfig = {
     indexDocument: "index.html",
   },
   cloudfront: {
-    enabled: true,
     customDomain: {
       domainName: "myapp.com", // SSL certificate created automatically!
     },
@@ -1162,7 +1149,6 @@ const config: SCFConfig = {
     errorDocument: "404.html",
   },
   cloudfront: {
-    enabled: true,
     spa: false, // Disable SPA mode - show actual 404 pages for missing URLs
   },
 };
@@ -1186,7 +1172,6 @@ const config: SCFConfig = {
   },
 
   cloudfront: {
-    enabled: true,
     priceClass: "PriceClass_All", // Global coverage
 
     customDomain: {
@@ -1346,7 +1331,6 @@ $ scf-deploy deploy --env prod
 
 # Or use manual certificate:
 cloudfront: {
-  enabled: true,
   customDomain: {
     domainName: "example.com",
     certificateArn: "arn:aws:acm:us-east-1:123456789012:certificate/abc-def",
@@ -1506,9 +1490,9 @@ cloudfront: {
    - Use AWS profiles locally
    - Let EC2/ECS IAM roles work automatically
 
-6. **Enable CloudFront in production**: Better performance and HTTPS
+6. **CloudFront is always enabled**: Better security, performance and HTTPS
 
-   - Disable CloudFront in dev to save costs
+   - CloudFront is required for secure S3 access via OAC
    - Use `PriceClass_100` for cost optimization
    - Upgrade to `PriceClass_All` for global coverage
 
@@ -1521,7 +1505,6 @@ cloudfront: {
 
    ```typescript
    cloudfront: {
-     enabled: true,
      customDomain: {
        domainName: "example.com",  // SSL handled automatically!
      },
@@ -1788,6 +1771,42 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 MIT License - see [LICENSE](LICENSE) file for details
 
 ## Changelog
+
+### v3.0.0
+
+**🔐 Enhanced Security with Origin Access Control (OAC)**
+
+**Breaking Changes:**
+
+- ⚠️ **`cloudfront.enabled` removed**: CloudFront is now always enabled for security - S3 buckets are private and only accessible via CloudFront
+- ⚠️ **`s3.websiteHosting` removed**: S3 static website hosting is no longer used
+- ⚠️ **S3 direct access removed**: S3 bucket URLs no longer work - use CloudFront URL instead
+
+**Added:**
+
+- ✨ **Origin Access Control (OAC)**: Secure S3 access through CloudFront only
+- ✨ **CloudFront Function**: Automatic index.html routing for directory requests
+- ✨ **Enhanced Security**: S3 bucket policy restricts access to CloudFront OAC only
+
+**Migration Guide (v2.x → v3.0.0):**
+
+```typescript
+// Before (v2.x)
+cloudfront: {
+  enabled: true,  // ❌ Remove this
+  priceClass: 'PriceClass_100',
+}
+
+// After (v3.0.0)
+cloudfront: {
+  // enabled option no longer exists - CloudFront is always active
+  priceClass: 'PriceClass_100',
+}
+```
+
+If you were using S3 bucket URLs directly, switch to CloudFront URLs.
+
+---
 
 ### v2.1.0
 
