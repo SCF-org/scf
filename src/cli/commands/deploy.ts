@@ -141,8 +141,12 @@ async function deployCommand(options: DeployOptions): Promise<void> {
     cleanupDeletedFiles: !noCleanup,
   });
 
-  // Step 5: Deploy to CloudFront (if enabled)
-  if (config.cloudfront?.enabled && !noCloudfront && !dryRun) {
+  // Step 5: Deploy to CloudFront (always enabled for security - S3 access restricted via OAC)
+  if (noCloudfront) {
+    logger.warn("--no-cloudfront: Skipping CloudFront deployment");
+    logger.warn("WARNING: S3 bucket is NOT publicly accessible without CloudFront!");
+    logger.warn("         Your site will not be accessible until CloudFront is deployed.");
+  } else if (!dryRun) {
     logger.section("CloudFront Deployment");
 
     try {
@@ -229,20 +233,21 @@ async function deployCommand(options: DeployOptions): Promise<void> {
       throw cfError;
     }
   } else {
-    // S3 only summary
+    // S3 only summary (dry-run or --no-cloudfront)
     logger.section("Deployment Summary");
     logger.keyValue(
       "S3 Files Uploaded",
       `${s3Stats.uploaded}/${s3Stats.totalFiles}`
     );
 
-    if (config.s3?.websiteHosting) {
-      const websiteUrl = `http://${config.s3.bucketName}.s3-website.${config.region}.amazonaws.com`;
-      logger.keyValue("Website URL", websiteUrl);
+    if (dryRun) {
+      console.log();
+      console.log(chalk.yellow.bold("Dry-run completed - no changes made"));
+    } else if (noCloudfront) {
+      console.log();
+      console.log(chalk.yellow.bold("S3 deployment completed"));
+      console.log(chalk.yellow("NOTE: Run 'scf deploy' without --no-cloudfront to make your site accessible"));
     }
-
-    console.log();
-    console.log(chalk.green.bold("( Deployment completed successfully!"));
   }
 
   // Ensure .gitignore has .deploy entry (after first deployment)

@@ -7,7 +7,7 @@ import chalk from "chalk";
 import ora, { type Ora } from "ora";
 import type { SCFConfig } from "../../types/config.js";
 import type { DeploymentStats, UploadOptions } from "../../types/deployer.js";
-import { createCloudFrontClient } from "./client.js";
+import { createCloudFrontClient, createS3Client } from "./client.js";
 import {
   distributionExists,
   getDistribution,
@@ -16,9 +16,12 @@ import {
   waitForDistributionDeployed,
   getDistributionUrl,
   tagDistributionForRecovery,
+  ensureOriginAccessControl,
+  ensureIndexRoutingFunction,
   type CreateDistributionOptions,
 } from "./cloudfront-distribution.js";
 import { invalidateCache, invalidateAll } from "./cloudfront-invalidation.js";
+import { setBucketCloudFrontOnlyPolicy } from "./s3-bucket.js";
 import {
   loadState,
   saveState,
@@ -109,11 +112,7 @@ export async function deployToCloudFront(
 ): Promise<CloudFrontDeploymentResult> {
   const startTime = Date.now();
 
-  // Validate CloudFront config
-  if (!config.cloudfront?.enabled) {
-    throw new Error("CloudFront is not enabled in configuration");
-  }
-
+  // Validate required config
   if (!config.s3?.bucketName) {
     throw new Error("S3 bucket name is required for CloudFront deployment");
   }
@@ -129,7 +128,7 @@ export async function deployToCloudFront(
     saveState: shouldSaveState = true,
   } = options;
 
-  const cloudFrontConfig = config.cloudfront;
+  const cloudFrontConfig = config.cloudfront || {};
   const s3Config = config.s3;
 
   // Apply SPA mode default errorPages (spa defaults to true)
@@ -469,6 +468,31 @@ export async function deployToCloudFront(
     }
   } else {
     // Create new distribution
+    // Step 1a: Create Origin Access Control (OAC)
+    if (showProgress) {
+      spinner = ora("Creating Origin Access Control (OAC)...").start();
+    }
+
+    const oacName = `scf-oac-${config.app}-${environment}`;
+    const oac = await ensureOriginAccessControl(cfClient, oacName);
+
+    if (spinner) {
+      spinner.succeed(`OAC ready: ${chalk.cyan(oac.id)}`);
+    }
+
+    // Step 1b: Create CloudFront Function for index routing
+    if (showProgress) {
+      spinner = ora("Creating CloudFront Function for index routing...").start();
+    }
+
+    const functionName = `scf-index-routing-${config.app}-${environment}`.replace(/[^a-zA-Z0-9-]/g, '-');
+    const cfFunction = await ensureIndexRoutingFunction(cfClient, functionName);
+
+    if (spinner) {
+      spinner.succeed(`CloudFront Function ready: ${chalk.cyan(cfFunction.name)}`);
+    }
+
+    // Step 1c: Create CloudFront Distribution
     if (showProgress) {
       spinner = ora("Creating CloudFront distribution...").start();
     }
@@ -481,6 +505,8 @@ export async function deployToCloudFront(
       priceClass: cloudFrontConfig.priceClass,
       ipv6: cloudFrontConfig.ipv6,
       errorPages: effectiveErrorPages,
+      oacId: oac.id,
+      functionArn: cfFunction.arn,
     };
 
     distribution = await createDistribution(cfClient, createOptions);
@@ -505,6 +531,20 @@ export async function deployToCloudFront(
       spinner.succeed(
         `CloudFront distribution created: ${chalk.cyan(distributionId)}`
       );
+    }
+
+    // Step 1d: Set S3 bucket policy to allow only CloudFront access
+    if (showProgress) {
+      spinner = ora("Setting S3 bucket policy for CloudFront-only access...").start();
+    }
+
+    const s3Client = createS3Client(config);
+    const accountId = distribution.ARN?.split(':')[4] || '';
+    const distributionArn = `arn:aws:cloudfront::${accountId}:distribution/${distributionId}`;
+    await setBucketCloudFrontOnlyPolicy(s3Client, s3Config.bucketName, distributionArn);
+
+    if (spinner) {
+      spinner.succeed(`S3 bucket policy updated: ${chalk.cyan('CloudFront-only access')}`);
     }
   }
 
@@ -833,36 +873,19 @@ export async function deployWithCloudFront(
   console.log(chalk.blue("📦 Step 1: S3 Deployment\n"));
   const s3Stats = await deployToS3(config, s3Options);
 
-  // Step 2: Deploy to CloudFront
-  if (config.cloudfront?.enabled) {
-    console.log(chalk.blue("\n☁️  Step 2: CloudFront Deployment\n"));
-    const cloudFront = await deployToCloudFront(
-      config,
-      s3Stats,
-      cloudFrontOptions
-    );
-
-    console.log();
-    console.log(chalk.green("✨ Deployment completed successfully!"));
-
-    return {
-      s3Stats,
-      cloudFront,
-    };
-  }
+  // Step 2: Deploy to CloudFront (always enabled)
+  console.log(chalk.blue("\n☁️  Step 2: CloudFront Deployment\n"));
+  const cloudFront = await deployToCloudFront(
+    config,
+    s3Stats,
+    cloudFrontOptions
+  );
 
   console.log();
-  console.log(chalk.green("✨ S3 deployment completed!"));
+  console.log(chalk.green("✨ Deployment completed successfully!"));
 
-  // Return with empty CloudFront result if not enabled
   return {
     s3Stats,
-    cloudFront: {
-      distributionId: "",
-      distributionDomain: "",
-      distributionUrl: "",
-      isNewDistribution: false,
-      deploymentTime: 0,
-    },
+    cloudFront,
   };
 }

@@ -32,7 +32,6 @@ const s3ConfigSchema = z
       ),
     indexDocument: z.string().default("index.html"),
     errorDocument: z.string().optional(),
-    websiteHosting: z.boolean().default(true),
     concurrency: z.number().int().min(1).max(100).default(10),
     gzip: z.boolean().default(true),
     exclude: z.array(z.string()).default([]),
@@ -61,10 +60,10 @@ const cacheWarmingSchema = z.object({
 
 /**
  * CloudFront configuration schema
+ * Note: CloudFront is now always enabled for security (OAC restricts S3 access)
  */
 const cloudfrontConfigSchema = z
   .object({
-    enabled: z.boolean(),
     priceClass: z
       .enum(["PriceClass_100", "PriceClass_200", "PriceClass_All"])
       .optional()

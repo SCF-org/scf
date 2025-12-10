@@ -381,13 +381,11 @@ describe('Config Loading Integration', () => {
         region: 'ap-northeast-2',
         s3: { bucketName: 'bucket', buildDir: './dist' },
         cloudfront: {
-          enabled: true,
           priceClass: 'PriceClass_100',
         },
       };
 
       const result = validateConfig(config);
-      expect(result.cloudfront?.enabled).toBe(true);
       expect(result.cloudfront?.priceClass).toBe('PriceClass_100');
     });
 
@@ -420,7 +418,6 @@ describe('Config Loading Integration', () => {
             errorDocument: '404.html',
           },
           cloudfront: {
-            enabled: true,
             priceClass: 'PriceClass_100',
           },
         };
@@ -431,7 +428,7 @@ describe('Config Loading Integration', () => {
       expect(configPath).toContain('scf.config.ts');
       expect(config.app).toBe('full-flow-test');
       expect(config.s3?.bucketName).toBe('flow-test-bucket');
-      expect(config.cloudfront?.enabled).toBe(true);
+      expect(config.cloudfront?.priceClass).toBe('PriceClass_100');
     });
 
     it('should throw error when no config found', async () => {

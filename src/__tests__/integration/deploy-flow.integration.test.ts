@@ -15,9 +15,6 @@ import {
   S3Client,
   HeadBucketCommand,
   CreateBucketCommand,
-  PutBucketWebsiteCommand,
-  PutBucketPolicyCommand,
-  DeletePublicAccessBlockCommand,
   PutBucketTaggingCommand,
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
@@ -39,7 +36,6 @@ import {
 import {
   ensureBucket,
   tagBucketForRecovery,
-  getBucketWebsiteUrl,
 } from '../../core/aws/s3-bucket.js';
 import type { FileHashMap } from '../../types/state.js';
 
@@ -60,9 +56,6 @@ describe('Deploy Flow Integration', () => {
     // Setup default S3 mocks
     s3Mock.on(HeadBucketCommand).rejects({ name: 'NotFound', $metadata: { httpStatusCode: 404 } });
     s3Mock.on(CreateBucketCommand).resolves({});
-    s3Mock.on(PutBucketWebsiteCommand).resolves({});
-    s3Mock.on(DeletePublicAccessBlockCommand).resolves({});
-    s3Mock.on(PutBucketPolicyCommand).resolves({});
     s3Mock.on(PutBucketTaggingCommand).resolves({});
     s3Mock.on(PutObjectCommand).resolves({ ETag: '"abc123"' });
   });
@@ -104,16 +97,11 @@ describe('Deploy Flow Integration', () => {
         },
       };
 
-      // Create bucket
+      // Create bucket (no longer configures website hosting - CloudFront OAC is used instead)
       await ensureBucket(
         s3Client,
         config.s3.bucketName,
-        config.region,
-        {
-          indexDocument: config.s3.indexDocument,
-          websiteHosting: true,
-          publicRead: true,
-        }
+        config.region
       );
 
       // Tag bucket
@@ -124,12 +112,11 @@ describe('Deploy Flow Integration', () => {
         'default'
       );
 
-      // Update state
+      // Update state (note: websiteUrl is no longer used with OAC)
       let state = initializeState(config.app);
       state = updateS3Resource(state, {
         bucketName: config.s3.bucketName,
         region: config.region,
-        websiteUrl: getBucketWebsiteUrl(config.s3.bucketName, config.region),
       });
       saveState(state);
 
@@ -138,28 +125,26 @@ describe('Deploy Flow Integration', () => {
       expect(createCalls).toHaveLength(1);
       expect(createCalls[0].args[0].input.Bucket).toBe('test-bucket-123');
 
-      // Verify website config was set
-      const websiteCalls = s3Mock.commandCalls(PutBucketWebsiteCommand);
-      expect(websiteCalls).toHaveLength(1);
+      // Note: Website hosting is no longer configured by ensureBucket
+      // S3 access is now restricted via CloudFront OAC
 
       // Verify state was saved correctly
       const loadedState = loadState();
       expect(loadedState?.resources.s3?.bucketName).toBe('test-bucket-123');
       expect(loadedState?.resources.s3?.region).toBe('ap-northeast-2');
-      expect(loadedState?.resources.s3?.websiteUrl).toContain('s3-website');
     });
 
     it('should skip bucket creation if already exists', async () => {
       // Mock bucket already exists
       s3Mock.on(HeadBucketCommand).resolves({});
 
-      await ensureBucket(s3Client, 'existing-bucket', 'ap-northeast-2');
+      const result = await ensureBucket(s3Client, 'existing-bucket', 'ap-northeast-2');
 
       // CreateBucket should NOT be called
       expect(s3Mock.commandCalls(CreateBucketCommand)).toHaveLength(0);
 
-      // But website config should still be set
-      expect(s3Mock.commandCalls(PutBucketWebsiteCommand)).toHaveLength(1);
+      // Verify return value indicates bucket was not created
+      expect(result.created).toBe(false);
     });
   });
 
@@ -268,19 +253,13 @@ describe('Deploy Flow Integration', () => {
       // Step 1: Initialize state
       let state = initializeState(config.app);
 
-      // Step 2: Create/ensure bucket
-      await ensureBucket(s3Client, config.s3.bucketName, config.region, {
-        indexDocument: config.s3.indexDocument,
-        errorDocument: config.s3.errorDocument,
-        websiteHosting: true,
-        publicRead: true,
-      });
+      // Step 2: Create/ensure bucket (no longer configures website hosting - CloudFront OAC is used)
+      await ensureBucket(s3Client, config.s3.bucketName, config.region);
 
       // Step 3: Update state with S3 resource
       state = updateS3Resource(state, {
         bucketName: config.s3.bucketName,
         region: config.region,
-        websiteUrl: getBucketWebsiteUrl(config.s3.bucketName, config.region),
       });
 
       // Step 4: Scan files

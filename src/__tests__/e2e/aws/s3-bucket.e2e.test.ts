@@ -19,7 +19,7 @@ import {
   createBucket,
   ensureBucket,
   configureBucketWebsite,
-  setBucketPublicReadPolicy,
+  setBucketCloudFrontOnlyPolicy,
   getBucketWebsiteUrl,
   deleteS3Bucket,
   tagBucketForRecovery,
@@ -164,13 +164,15 @@ describeE2E('E2E: S3 Bucket Management', () => {
       console.log(`   ✓ Website hosting configured: ${websiteUrl}`);
     }, 30000);
 
-    it('should set public read policy on bucket', async () => {
-      console.log('   Setting public read policy...');
+    it('should set CloudFront-only access policy on bucket', async () => {
+      console.log('   Setting CloudFront-only access policy...');
 
-      await setBucketPublicReadPolicy(client, bucketName);
+      // Use a mock CloudFront distribution ARN for testing
+      const mockDistributionArn = 'arn:aws:cloudfront::123456789012:distribution/EXAMPLEID';
+      await setBucketCloudFrontOnlyPolicy(client, bucketName, mockDistributionArn);
 
       // If no error thrown, policy was set successfully
-      console.log('   ✓ Public read policy set');
+      console.log('   ✓ CloudFront-only access policy set');
     }, 30000);
 
     it('should tag bucket for recovery', async () => {

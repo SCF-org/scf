@@ -9,7 +9,7 @@
  * Build directory is auto-detected (dist, build, out, etc.)
  * You can override it by adding: s3: { buildDir: './custom-dir' }
  */
-import type { SCFConfig } from "scf-deploy";
+import type { SCFConfig } from "./dist/index.js";
 
 const config: SCFConfig = {
   app: process.env.APP_NAME || "my-app",
@@ -22,9 +22,8 @@ const config: SCFConfig = {
   },
 
   cloudfront: {
-    enabled: process.env.CLOUDFRONT_ENABLED === "true" || true,
-    priceClass:
-      (process.env.CLOUDFRONT_PRICE_CLASS as any) || "PriceClass_100",
+    // Note: CloudFront is now always enabled for security (S3 access restricted via OAC)
+    priceClass: (process.env.CLOUDFRONT_PRICE_CLASS as any) || "PriceClass_100",
     // Cache warming: warm up edge locations after deployment (incurs data transfer costs)
     // cacheWarming: {
     //   enabled: true,
@@ -51,9 +50,6 @@ const config: SCFConfig = {
       s3: {
         bucketName: process.env.S3_BUCKET_NAME || "my-app-bucket-dev",
       },
-      cloudfront: {
-        enabled: process.env.CLOUDFRONT_ENABLED === "true" || false,
-      },
     },
     staging: {
       s3: {
@@ -63,9 +59,6 @@ const config: SCFConfig = {
     prod: {
       s3: {
         bucketName: process.env.S3_BUCKET_NAME || "my-app-bucket-prod",
-      },
-      cloudfront: {
-        enabled: process.env.CLOUDFRONT_ENABLED === "true" || true,
       },
     },
   },

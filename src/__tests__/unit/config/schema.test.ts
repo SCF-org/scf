@@ -34,7 +34,6 @@ describe("Config Schema Validation", () => {
           errorDocument: "404.html",
         },
         cloudfront: {
-          enabled: true,
           priceClass: "PriceClass_100" as const,
           customDomain: {
             domainName: "example.com",
@@ -46,7 +45,7 @@ describe("Config Schema Validation", () => {
 
       expect(() => validateConfig(config)).not.toThrow();
       const result = validateConfig(config);
-      expect(result.cloudfront?.enabled).toBe(true);
+      expect(result.cloudfront?.priceClass).toBe("PriceClass_100");
     });
 
     it("should apply default values", () => {
@@ -61,7 +60,6 @@ describe("Config Schema Validation", () => {
 
       const result = validateConfig(config);
       expect(result.s3?.indexDocument).toBe("index.html");
-      expect(result.s3?.websiteHosting).toBe(true);
       expect(result.s3?.concurrency).toBe(10);
       expect(result.s3?.gzip).toBe(true);
     });
@@ -255,7 +253,6 @@ describe("Config Schema Validation", () => {
           region: "us-east-1",
           s3: { bucketName: "test-bucket", buildDir: "./dist" },
           cloudfront: {
-            enabled: true,
             priceClass,
           },
         };
@@ -269,7 +266,6 @@ describe("Config Schema Validation", () => {
         region: "us-east-1",
         s3: { bucketName: "test-bucket", buildDir: "./dist" },
         cloudfront: {
-          enabled: true,
           priceClass: "InvalidPriceClass",
         },
       };
@@ -283,7 +279,6 @@ describe("Config Schema Validation", () => {
         region: "us-east-1",
         s3: { bucketName: "test-bucket", buildDir: "./dist" },
         cloudfront: {
-          enabled: true,
           customDomain: {
             domainName: "example.com",
             certificateArn:
@@ -301,7 +296,6 @@ describe("Config Schema Validation", () => {
         region: "us-east-1",
         s3: { bucketName: "test-bucket", buildDir: "./dist" },
         cloudfront: {
-          enabled: true,
           customDomain: {
             domainName: "example.com",
             certificateArn: "invalid-arn",
@@ -318,7 +312,6 @@ describe("Config Schema Validation", () => {
         region: "us-east-1",
         s3: { bucketName: "test-bucket", buildDir: "./dist" },
         cloudfront: {
-          enabled: true,
           spa: true,
           ipv6: true,
         },

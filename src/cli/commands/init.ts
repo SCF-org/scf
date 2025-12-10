@@ -13,7 +13,6 @@ interface InitAnswers {
   app: string;
   region: string;
   bucketName: string;
-  enableCloudFront: boolean;
 }
 
 const AWS_REGIONS = [
@@ -27,7 +26,7 @@ const AWS_REGIONS = [
 ];
 
 function generateConfigContent(answers: InitAnswers): string {
-  const { app, region, bucketName, enableCloudFront } = answers;
+  const { app, region, bucketName } = answers;
 
   // Generate UUID for bucket name uniqueness (already included in bucketName from prompt)
   // Extract base name and UUID if already present, or generate new UUID
@@ -40,6 +39,8 @@ function generateConfigContent(answers: InitAnswers): string {
  *
  * Build directory is auto-detected (dist, build, out, etc.)
  * You can override it by adding: s3: { buildDir: './custom-dir' }
+ *
+ * Note: CloudFront is always enabled for security (S3 access restricted via OAC)
  */
 import type { SCFConfig } from 'scf-deploy';
 
@@ -54,7 +55,6 @@ const config: SCFConfig = {
   },
 
   cloudfront: {
-    enabled: ${enableCloudFront},
     // SPA mode (default: true)
     // - true: Redirect 403/404 to index.html (React, Vue, Angular, etc.)
     // - false: Return default 404 error (static HTML sites that need 404 page)
@@ -85,7 +85,6 @@ const config: SCFConfig = {
   environments: {
     dev: {
       s3: { bucketName: '${baseBucketName}-dev-${uuid}' },
-      cloudfront: { enabled: false },
     },
     staging: {
       s3: { bucketName: '${baseBucketName}-staging-${uuid}' },
@@ -108,11 +107,11 @@ async function promptUser(interactive: boolean): Promise<InitAnswers> {
       app: "my-app",
       region: "us-east-1",
       bucketName: `my-app-bucket-${uuid}`,
-      enableCloudFront: true,
     };
   }
 
   // Interactive mode
+  // Note: CloudFront is always enabled for security (S3 access restricted via OAC)
   const answers = await inquirer.prompt<InitAnswers>([
     {
       type: "input",
@@ -147,12 +146,6 @@ async function promptUser(interactive: boolean): Promise<InitAnswers> {
           return "Only lowercase letters, numbers, and hyphens are allowed";
         return true;
       },
-    },
-    {
-      type: "confirm",
-      name: "enableCloudFront",
-      message: "Enable CloudFront CDN?",
-      default: true,
     },
   ]);
 

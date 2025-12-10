@@ -8,7 +8,6 @@ import {
   CreateBucketCommand,
   PutBucketWebsiteCommand,
   PutBucketPolicyCommand,
-  DeletePublicAccessBlockCommand,
   PutBucketTaggingCommand,
   GetBucketTaggingCommand,
   ListObjectsV2Command,
@@ -107,33 +106,31 @@ export async function configureBucketWebsite(
 }
 
 /**
- * Set bucket policy for public read access
+ * Set bucket policy to allow only CloudFront access via OAC
+ * This blocks direct S3 access and only allows CloudFront to read objects
  */
-export async function setBucketPublicReadPolicy(
+export async function setBucketCloudFrontOnlyPolicy(
   client: S3Client,
-  bucketName: string
+  bucketName: string,
+  cloudFrontDistributionArn: string
 ): Promise<void> {
-  // First, remove public access block
-  try {
-    await client.send(
-      new DeletePublicAccessBlockCommand({
-        Bucket: bucketName,
-      })
-    );
-  } catch (_error) {
-    // Ignore if doesn't exist
-  }
-
-  // Set bucket policy
+  // Set bucket policy for CloudFront OAC access only
   const policy = {
     Version: '2012-10-17',
     Statement: [
       {
-        Sid: 'PublicReadGetObject',
+        Sid: 'AllowCloudFrontServicePrincipalReadOnly',
         Effect: 'Allow',
-        Principal: '*',
+        Principal: {
+          Service: 'cloudfront.amazonaws.com',
+        },
         Action: 's3:GetObject',
         Resource: `arn:aws:s3:::${bucketName}/*`,
+        Condition: {
+          StringEquals: {
+            'AWS:SourceArn': cloudFrontDistributionArn,
+          },
+        },
       },
     ],
   };
@@ -147,26 +144,13 @@ export async function setBucketPublicReadPolicy(
 }
 
 /**
- * Ensure bucket exists and is properly configured
+ * Ensure bucket exists (without public access - CloudFront OAC will be used)
  */
 export async function ensureBucket(
   client: S3Client,
   bucketName: string,
-  region: string,
-  options: {
-    websiteHosting?: boolean;
-    indexDocument?: string;
-    errorDocument?: string;
-    publicRead?: boolean;
-  } = {}
+  region: string
 ): Promise<{ created: boolean }> {
-  const {
-    websiteHosting = true,
-    indexDocument = 'index.html',
-    errorDocument,
-    publicRead = true,
-  } = options;
-
   // Check if bucket exists
   const exists = await bucketExists(client, bucketName);
   let created = false;
@@ -177,15 +161,9 @@ export async function ensureBucket(
     created = result.actuallyCreated;
   }
 
-  // Configure website hosting
-  if (websiteHosting) {
-    await configureBucketWebsite(client, bucketName, indexDocument, errorDocument);
-  }
-
-  // Set public read policy
-  if (publicRead) {
-    await setBucketPublicReadPolicy(client, bucketName);
-  }
+  // Note: No website hosting or public read policy
+  // CloudFront OAC will be configured after distribution creation
+  // Bucket policy will be set by setBucketCloudFrontOnlyPolicy()
 
   return { created };
 }

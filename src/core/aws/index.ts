@@ -31,7 +31,7 @@ export {
   bucketExists,
   createBucket,
   configureBucketWebsite,
-  setBucketPublicReadPolicy,
+  setBucketCloudFrontOnlyPolicy,
   ensureBucket,
   getBucketWebsiteUrl,
 } from './s3-bucket.js';

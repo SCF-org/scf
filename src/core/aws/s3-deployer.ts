@@ -9,7 +9,7 @@ import cliProgress from "cli-progress";
 import type { SCFConfig } from "../../types/config.js";
 import type { DeploymentStats, UploadOptions } from "../../types/deployer.js";
 import { createS3Client } from "./client.js";
-import { ensureBucket, getBucketWebsiteUrl, tagBucketForRecovery, deleteFilesFromS3 } from "./s3-bucket.js";
+import { ensureBucket, tagBucketForRecovery, deleteFilesFromS3 } from "./s3-bucket.js";
 import { scanFiles } from "../deployer/file-scanner.js";
 import { getBuildDirectory } from "../deployer/build-detector.js";
 import {
@@ -45,9 +45,6 @@ export async function deployToS3(
   const {
     bucketName,
     buildDir: providedBuildDir,
-    indexDocument = "index.html",
-    errorDocument,
-    websiteHosting = true,
     gzip = true,
     concurrency = 10,
     exclude = [],
@@ -117,12 +114,7 @@ export async function deployToS3(
   let bucketCreated = false;
 
   try {
-    const bucketResult = await ensureBucket(s3Client, bucketName, config.region, {
-      websiteHosting,
-      indexDocument,
-      errorDocument,
-      publicRead: true,
-    });
+    const bucketResult = await ensureBucket(s3Client, bucketName, config.region);
     bucketCreated = bucketResult.created;
 
     // Tag bucket for state recovery
@@ -283,15 +275,8 @@ export async function deployToS3(
   const duration = Date.now() - startTime;
   console.log(chalk.gray(`Duration: ${(duration / 1000).toFixed(2)}s`));
 
-  // Show website URL
-  const websiteUrl = websiteHosting
-    ? getBucketWebsiteUrl(bucketName, config.region)
-    : undefined;
-
-  if (websiteHosting && !dryRun) {
-    console.log();
-    console.log(chalk.green("🌐 Website URL:"), chalk.cyan(websiteUrl));
-  }
+  // Note: Website URL is no longer shown here
+  // CloudFront URL will be shown by cloudfront-deployer after distribution is created
 
   // Step 6: Cleanup deleted files from S3
   if (cleanupDeletedFiles && useIncrementalDeploy && !forceFullDeploy && state && !dryRun && fileChanges) {
@@ -339,7 +324,6 @@ export async function deployToS3(
     state = updateS3Resource(state, {
       bucketName,
       region: config.region,
-      websiteUrl,
     });
 
     // Update file hashes (all scanned files, not just uploaded)

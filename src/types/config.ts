@@ -83,14 +83,11 @@ export interface S3Config {
    */
   buildDir?: string;
 
-  /** Index document for static website hosting */
+  /** Index document (default: index.html) - used by CloudFront Function */
   indexDocument?: string;
 
-  /** Error document for static website hosting */
+  /** Error document - used for CloudFront custom error responses */
   errorDocument?: string;
-
-  /** Whether to enable static website hosting */
-  websiteHosting?: boolean;
 
   /** Maximum concurrent uploads */
   concurrency?: number;
@@ -104,11 +101,9 @@ export interface S3Config {
 
 /**
  * CloudFront distribution configuration
+ * Note: CloudFront is now always enabled for security (OAC restricts S3 access)
  */
 export interface CloudFrontConfig {
-  /** Whether to enable CloudFront */
-  enabled: boolean;
-
   /** Distribution price class */
   priceClass?: "PriceClass_100" | "PriceClass_200" | "PriceClass_All";
 

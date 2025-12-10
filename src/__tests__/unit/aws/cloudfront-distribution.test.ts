@@ -156,6 +156,8 @@ describe("CloudFront Distribution Management", () => {
       const options: CreateDistributionOptions = {
         s3BucketName: "my-bucket",
         s3Region: "us-east-1",
+        oacId: "E1OAC123456789",
+        functionArn: "arn:aws:cloudfront::123456789012:function/index-routing",
       };
 
       const distribution = await createDistribution(client, options);
@@ -167,10 +169,11 @@ describe("CloudFront Distribution Management", () => {
 
       const config = calls[0].args[0].input.DistributionConfig;
       expect(config?.Enabled).toBe(true);
+      // Now using S3 REST endpoint with OAC (not website endpoint)
       expect(config?.Origins?.Items?.[0]?.DomainName).toBe(
-        "my-bucket.s3-website-us-east-1.amazonaws.com"
+        "my-bucket.s3.amazonaws.com"
       );
-      expect(config?.DefaultRootObject).toBe("index.html");
+      expect(config?.Origins?.Items?.[0]?.OriginAccessControlId).toBe("E1OAC123456789");
       expect(config?.PriceClass).toBe("PriceClass_100");
     });
 
@@ -182,15 +185,18 @@ describe("CloudFront Distribution Management", () => {
       const options: CreateDistributionOptions = {
         s3BucketName: "my-bucket",
         s3Region: "ap-northeast-2",
+        oacId: "E1OAC123456789",
+        functionArn: "arn:aws:cloudfront::123456789012:function/index-routing",
       };
 
       await createDistribution(client, options);
 
       const calls = cfMock.commandCalls(CreateDistributionCommand);
+      // Now using S3 REST endpoint (not website endpoint)
       expect(
         calls[0].args[0].input.DistributionConfig?.Origins?.Items?.[0]
           ?.DomainName
-      ).toBe("my-bucket.s3-website.ap-northeast-2.amazonaws.com");
+      ).toBe("my-bucket.s3.ap-northeast-2.amazonaws.com");
     });
 
     it("should create distribution with custom domain and certificate", async () => {
@@ -201,6 +207,8 @@ describe("CloudFront Distribution Management", () => {
       const options: CreateDistributionOptions = {
         s3BucketName: "my-bucket",
         s3Region: "us-east-1",
+        oacId: "E1OAC123456789",
+        functionArn: "arn:aws:cloudfront::123456789012:function/index-routing",
         customDomain: {
           domainName: "example.com",
           certificateArn:
@@ -228,6 +236,8 @@ describe("CloudFront Distribution Management", () => {
       const options: CreateDistributionOptions = {
         s3BucketName: "my-bucket",
         s3Region: "us-east-1",
+        oacId: "E1OAC123456789",
+        functionArn: "arn:aws:cloudfront::123456789012:function/index-routing",
         customDomain: {
           domainName: "example.com",
           certificateArn:
@@ -256,6 +266,8 @@ describe("CloudFront Distribution Management", () => {
       const options: CreateDistributionOptions = {
         s3BucketName: "my-bucket",
         s3Region: "us-east-1",
+        oacId: "E1OAC123456789",
+        functionArn: "arn:aws:cloudfront::123456789012:function/index-routing",
         priceClass: "PriceClass_All",
         ipv6: false,
       };
@@ -289,6 +301,8 @@ describe("CloudFront Distribution Management", () => {
       const options: CreateDistributionOptions = {
         s3BucketName: "my-bucket",
         s3Region: "us-east-1",
+        oacId: "E1OAC123456789",
+        functionArn: "arn:aws:cloudfront::123456789012:function/index-routing",
       };
 
       await createDistribution(client, options);
@@ -309,6 +323,8 @@ describe("CloudFront Distribution Management", () => {
       const options: CreateDistributionOptions = {
         s3BucketName: "my-bucket",
         s3Region: "us-east-1",
+        oacId: "E1OAC123456789",
+        functionArn: "arn:aws:cloudfront::123456789012:function/index-routing",
       };
 
       await expect(createDistribution(client, options)).rejects.toThrow(
@@ -322,6 +338,8 @@ describe("CloudFront Distribution Management", () => {
       const options: CreateDistributionOptions = {
         s3BucketName: "my-bucket",
         s3Region: "us-east-1",
+        oacId: "E1OAC123456789",
+        functionArn: "arn:aws:cloudfront::123456789012:function/index-routing",
       };
 
       await expect(createDistribution(client, options)).rejects.toThrow(
@@ -337,6 +355,8 @@ describe("CloudFront Distribution Management", () => {
       const options: CreateDistributionOptions = {
         s3BucketName: "my-bucket",
         s3Region: "us-east-1",
+        oacId: "E1OAC123456789",
+        functionArn: "arn:aws:cloudfront::123456789012:function/index-routing",
         errorPages: [
           {
             errorCode: 403,
@@ -377,6 +397,8 @@ describe("CloudFront Distribution Management", () => {
       const options: CreateDistributionOptions = {
         s3BucketName: "my-bucket",
         s3Region: "us-east-1",
+        oacId: "E1OAC123456789",
+        functionArn: "arn:aws:cloudfront::123456789012:function/index-routing",
       };
 
       await createDistribution(client, options);

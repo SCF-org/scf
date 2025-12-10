@@ -6,7 +6,6 @@ import {
   CreateBucketCommand,
   PutBucketWebsiteCommand,
   PutBucketPolicyCommand,
-  DeletePublicAccessBlockCommand,
   PutBucketTaggingCommand,
   GetBucketTaggingCommand,
   ListObjectsV2Command,
@@ -17,7 +16,7 @@ import {
   bucketExists,
   createBucket,
   configureBucketWebsite,
-  setBucketPublicReadPolicy,
+  setBucketCloudFrontOnlyPolicy,
   ensureBucket,
   tagBucketForRecovery,
   getBucketTags,
@@ -149,12 +148,12 @@ describe('S3 Bucket Management', () => {
     });
   });
 
-  describe('setBucketPublicReadPolicy', () => {
-    it('should set public read policy', async () => {
-      s3Mock.on(DeletePublicAccessBlockCommand).resolves({});
+  describe('setBucketCloudFrontOnlyPolicy', () => {
+    it('should set CloudFront-only access policy', async () => {
       s3Mock.on(PutBucketPolicyCommand).resolves({});
 
-      await setBucketPublicReadPolicy(client, 'my-bucket');
+      const distributionArn = 'arn:aws:cloudfront::123456789012:distribution/E1234567890ABC';
+      await setBucketCloudFrontOnlyPolicy(client, 'my-bucket', distributionArn);
 
       const policyCalls = s3Mock.commandCalls(PutBucketPolicyCommand);
       expect(policyCalls).toHaveLength(1);
@@ -164,78 +163,51 @@ describe('S3 Bucket Management', () => {
         Version: '2012-10-17',
         Statement: [
           {
-            Sid: 'PublicReadGetObject',
+            Sid: 'AllowCloudFrontServicePrincipalReadOnly',
             Effect: 'Allow',
-            Principal: '*',
+            Principal: {
+              Service: 'cloudfront.amazonaws.com',
+            },
             Action: 's3:GetObject',
             Resource: 'arn:aws:s3:::my-bucket/*',
+            Condition: {
+              StringEquals: {
+                'AWS:SourceArn': distributionArn,
+              },
+            },
           },
         ],
       });
     });
-
-    it('should continue even if DeletePublicAccessBlock fails', async () => {
-      s3Mock.on(DeletePublicAccessBlockCommand).rejects(new Error('Not found'));
-      s3Mock.on(PutBucketPolicyCommand).resolves({});
-
-      await expect(setBucketPublicReadPolicy(client, 'my-bucket')).resolves.toBeUndefined();
-
-      const policyCalls = s3Mock.commandCalls(PutBucketPolicyCommand);
-      expect(policyCalls).toHaveLength(1);
-    });
   });
 
   describe('ensureBucket', () => {
-    it('should create and configure new bucket', async () => {
+    it('should create new bucket when it does not exist', async () => {
       s3Mock.on(HeadBucketCommand).rejects({ name: 'NotFound', $metadata: { httpStatusCode: 404 } });
       s3Mock.on(CreateBucketCommand).resolves({});
-      s3Mock.on(PutBucketWebsiteCommand).resolves({});
-      s3Mock.on(DeletePublicAccessBlockCommand).resolves({});
-      s3Mock.on(PutBucketPolicyCommand).resolves({});
 
-      await ensureBucket(client, 'my-bucket', 'us-east-1');
+      const result = await ensureBucket(client, 'my-bucket', 'us-east-1');
 
       expect(s3Mock.commandCalls(CreateBucketCommand)).toHaveLength(1);
-      expect(s3Mock.commandCalls(PutBucketWebsiteCommand)).toHaveLength(1);
-      expect(s3Mock.commandCalls(PutBucketPolicyCommand)).toHaveLength(1);
+      expect(result.created).toBe(true);
     });
 
-    it('should only configure existing bucket', async () => {
+    it('should not create bucket when it already exists', async () => {
       s3Mock.on(HeadBucketCommand).resolves({});
-      s3Mock.on(PutBucketWebsiteCommand).resolves({});
-      s3Mock.on(DeletePublicAccessBlockCommand).resolves({});
-      s3Mock.on(PutBucketPolicyCommand).resolves({});
 
-      await ensureBucket(client, 'existing-bucket', 'us-east-1');
+      const result = await ensureBucket(client, 'existing-bucket', 'us-east-1');
 
       expect(s3Mock.commandCalls(CreateBucketCommand)).toHaveLength(0);
-      expect(s3Mock.commandCalls(PutBucketWebsiteCommand)).toHaveLength(1);
-      expect(s3Mock.commandCalls(PutBucketPolicyCommand)).toHaveLength(1);
+      expect(result.created).toBe(false);
     });
 
-    it('should skip website hosting if disabled', async () => {
-      s3Mock.on(HeadBucketCommand).resolves({});
-      s3Mock.on(DeletePublicAccessBlockCommand).resolves({});
-      s3Mock.on(PutBucketPolicyCommand).resolves({});
+    it('should return created=false when bucket already owned by user', async () => {
+      s3Mock.on(HeadBucketCommand).rejects({ name: 'NotFound', $metadata: { httpStatusCode: 404 } });
+      s3Mock.on(CreateBucketCommand).rejects({ name: 'BucketAlreadyOwnedByYou' });
 
-      await ensureBucket(client, 'my-bucket', 'us-east-1', {
-        websiteHosting: false,
-      });
+      const result = await ensureBucket(client, 'my-bucket', 'us-east-1');
 
-      expect(s3Mock.commandCalls(PutBucketWebsiteCommand)).toHaveLength(0);
-      expect(s3Mock.commandCalls(PutBucketPolicyCommand)).toHaveLength(1);
-    });
-
-    it('should skip public read if disabled', async () => {
-      s3Mock.on(HeadBucketCommand).resolves({});
-      s3Mock.on(PutBucketWebsiteCommand).resolves({});
-
-      await ensureBucket(client, 'my-bucket', 'us-east-1', {
-        publicRead: false,
-      });
-
-      expect(s3Mock.commandCalls(PutBucketWebsiteCommand)).toHaveLength(1);
-      expect(s3Mock.commandCalls(PutBucketPolicyCommand)).toHaveLength(0);
+      expect(result.created).toBe(false);
     });
   });
 

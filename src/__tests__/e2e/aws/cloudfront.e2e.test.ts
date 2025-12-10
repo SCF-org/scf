@@ -26,6 +26,10 @@ import {
   getDistributionUrl,
   waitForDistributionDeployed,
   deleteDistributionQuiet,
+  ensureOriginAccessControl,
+  ensureIndexRoutingFunction,
+  deleteOriginAccessControl,
+  deleteCloudFrontFunction,
   type CreateDistributionOptions,
 } from '../../../core/aws/cloudfront-distribution.js';
 import {
@@ -36,8 +40,7 @@ import {
 } from '../../../core/aws/cloudfront-invalidation.js';
 import {
   createBucket,
-  configureBucketWebsite,
-  setBucketPublicReadPolicy,
+  setBucketCloudFrontOnlyPolicy,
   deleteS3Bucket,
 } from '../../../core/aws/s3-bucket.js';
 
@@ -51,6 +54,8 @@ describeE2E('E2E: CloudFront Distribution', () => {
 
   let testBucketName: string;
   let distributionId: string;
+  let oacId: string;
+  let functionName: string;
 
   // Generate unique names
   const generateUniqueName = () => {
@@ -87,8 +92,6 @@ describeE2E('E2E: CloudFront Distribution', () => {
     console.log(`   Creating S3 bucket: ${testBucketName}`);
 
     await createBucket(s3Client, testBucketName, region);
-    await configureBucketWebsite(s3Client, testBucketName, 'index.html');
-    await setBucketPublicReadPolicy(s3Client, testBucketName);
 
     // Upload test file
     await s3Client.send(
@@ -102,6 +105,18 @@ describeE2E('E2E: CloudFront Distribution', () => {
 
     console.log('   ✓ S3 bucket ready with test content');
 
+    // Create OAC for CloudFront
+    console.log('   Creating Origin Access Control...');
+    const oacResult = await ensureOriginAccessControl(cfClient, `scf-e2e-oac-${Date.now()}`);
+    oacId = oacResult.oacId;
+    console.log(`   ✓ OAC created: ${oacId}`);
+
+    // Create CloudFront Function for index routing
+    console.log('   Creating CloudFront Function...');
+    functionName = `scf-e2e-func-${Date.now()}`;
+    const functionResult = await ensureIndexRoutingFunction(cfClient, functionName);
+    console.log(`   ✓ CloudFront Function created: ${functionResult.functionArn}`);
+
     // Create CloudFront distribution
     console.log('   Creating CloudFront distribution (this takes ~15 minutes)...');
 
@@ -110,16 +125,23 @@ describeE2E('E2E: CloudFront Distribution', () => {
       s3Region: region,
       indexDocument: 'index.html',
       priceClass: 'PriceClass_100', // Cheapest option
+      oacId,
+      functionArn: functionResult.functionArn,
     };
 
     const distribution = await createDistribution(cfClient, options);
 
-    if (!distribution.Id) {
-      throw new Error('Failed to get distribution ID');
+    if (!distribution.Id || !distribution.ARN) {
+      throw new Error('Failed to get distribution ID or ARN');
     }
 
     distributionId = distribution.Id;
     console.log(`   ✓ Distribution created: ${distributionId}`);
+
+    // Set bucket policy to allow only CloudFront access
+    console.log('   Setting CloudFront-only bucket policy...');
+    await setBucketCloudFrontOnlyPolicy(s3Client, testBucketName, distribution.ARN);
+    console.log('   ✓ Bucket policy set');
 
     // Wait for deployment (this is the slowest part)
     console.log('   Waiting for distribution to deploy...');
@@ -157,6 +179,30 @@ describeE2E('E2E: CloudFront Distribution', () => {
       } catch (error) {
         console.warn(`   ⚠️  CloudFront cleanup failed:`, error);
         console.log(`   ⚠️  Manual cleanup may be needed for distribution: ${distributionId}`);
+      }
+    }
+
+    // OAC 삭제
+    if (oacId) {
+      try {
+        console.log(`   Deleting OAC: ${oacId}`);
+        await deleteOriginAccessControl(cfClient, oacId);
+        console.log('   ✓ OAC deleted');
+      } catch (error) {
+        console.warn(`   ⚠️  OAC cleanup failed:`, error);
+        console.log(`   ⚠️  Manual cleanup may be needed for OAC: ${oacId}`);
+      }
+    }
+
+    // CloudFront Function 삭제
+    if (functionName) {
+      try {
+        console.log(`   Deleting CloudFront Function: ${functionName}`);
+        await deleteCloudFrontFunction(cfClient, functionName);
+        console.log('   ✓ CloudFront Function deleted');
+      } catch (error) {
+        console.warn(`   ⚠️  CloudFront Function cleanup failed:`, error);
+        console.log(`   ⚠️  Manual cleanup may be needed for function: ${functionName}`);
       }
     }
 
