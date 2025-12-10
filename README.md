@@ -1808,6 +1808,15 @@ If you were using S3 bucket URLs directly, switch to CloudFront URLs.
 
 ---
 
+### v3.0.1
+
+**🔧 S3 Bucket Policy Migration Fix**
+
+- 🐛 **Fixed**: S3 bucket policy now applies on every deployment (not just new distributions)
+- ✨ **Auto-migration**: Users upgrading from v2.x will automatically have their S3 buckets secured with CloudFront-only access on first deploy
+
+---
+
 ### v2.1.0
 
 **🛡️ Deployment Stability & Resource Management**
