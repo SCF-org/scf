@@ -787,7 +787,7 @@ export function getDistributionUrl(distribution: Distribution): string {
 /**
  * Get AWS account ID from STS
  */
-async function getAccountId(region: string): Promise<string> {
+export async function getAccountId(region: string): Promise<string> {
   const stsClient = new STSClient({ region });
   const identity = await stsClient.send(new GetCallerIdentityCommand({}));
 

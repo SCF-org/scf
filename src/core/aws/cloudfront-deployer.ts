@@ -18,6 +18,7 @@ import {
   tagDistributionForRecovery,
   ensureOriginAccessControl,
   ensureIndexRoutingFunction,
+  getAccountId,
   type CreateDistributionOptions,
 } from "./cloudfront-distribution.js";
 import { invalidateCache, invalidateAll } from "./cloudfront-invalidation.js";
@@ -540,7 +541,7 @@ export async function deployToCloudFront(
   }
 
   const s3Client = createS3Client(config);
-  const accountId = distribution?.ARN?.split(':')[4] || '';
+  const accountId = await getAccountId(config.region);
   const distributionArn = `arn:aws:cloudfront::${accountId}:distribution/${distributionId}`;
   await setBucketCloudFrontOnlyPolicy(s3Client, s3Config.bucketName, distributionArn);
 
