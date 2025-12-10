@@ -532,20 +532,20 @@ export async function deployToCloudFront(
         `CloudFront distribution created: ${chalk.cyan(distributionId)}`
       );
     }
+  }
 
-    // Step 1d: Set S3 bucket policy to allow only CloudFront access
-    if (showProgress) {
-      spinner = ora("Setting S3 bucket policy for CloudFront-only access...").start();
-    }
+  // Step 1d: Set S3 bucket policy to allow only CloudFront access (applies to both new and existing distributions)
+  if (showProgress) {
+    spinner = ora("Setting S3 bucket policy for CloudFront-only access...").start();
+  }
 
-    const s3Client = createS3Client(config);
-    const accountId = distribution.ARN?.split(':')[4] || '';
-    const distributionArn = `arn:aws:cloudfront::${accountId}:distribution/${distributionId}`;
-    await setBucketCloudFrontOnlyPolicy(s3Client, s3Config.bucketName, distributionArn);
+  const s3Client = createS3Client(config);
+  const accountId = distribution?.ARN?.split(':')[4] || '';
+  const distributionArn = `arn:aws:cloudfront::${accountId}:distribution/${distributionId}`;
+  await setBucketCloudFrontOnlyPolicy(s3Client, s3Config.bucketName, distributionArn);
 
-    if (spinner) {
-      spinner.succeed(`S3 bucket policy updated: ${chalk.cyan('CloudFront-only access')}`);
-    }
+  if (spinner) {
+    spinner.succeed(`S3 bucket policy updated: ${chalk.cyan('CloudFront-only access')}`);
   }
 
   // Step 2: Wait for distribution to be deployed
